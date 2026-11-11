@@ -5,12 +5,16 @@ OrderBook::OrderBook() {
     trades_.reserve(100000); 
 }
 
-void OrderBook::addOrder(Order order) {
+AddResult OrderBook::addOrder(Order order) {
+    const std::size_t tradesBefore = trades_.size();
+    const Quantity requested = order.quantity;
     if (order.side == Side::Buy) {
         matchAsk(order);
     } else {
         matchBid(order);
     }
+    return {AddStatus::Accepted, RejectReason::None, trades_.size() - tradesBefore,
+            requested - order.quantity};
 }
 
 // Processing a new BUY order (matches against Ask book)
