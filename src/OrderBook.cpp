@@ -6,6 +6,12 @@ OrderBook::OrderBook() {
 }
 
 AddResult OrderBook::addOrder(Order order) {
+    if (order.quantity == 0) {
+        return {AddStatus::Rejected, RejectReason::ZeroQuantity, 0, 0};
+    }
+    if (order.price <= 0) {
+        return {AddStatus::Rejected, RejectReason::InvalidPrice, 0, 0};
+    }
     if (restingIds_.count(order.id) != 0) {
         return {AddStatus::Rejected, RejectReason::DuplicateId, 0, 0};
     }
