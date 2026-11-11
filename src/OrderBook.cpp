@@ -6,6 +6,9 @@ OrderBook::OrderBook() {
 }
 
 AddResult OrderBook::addOrder(Order order) {
+    if (restingIds_.count(order.id) != 0) {
+        return {AddStatus::Rejected, RejectReason::DuplicateId, 0, 0};
+    }
     const std::size_t tradesBefore = trades_.size();
     const Quantity requested = order.quantity;
     if (order.side == Side::Buy) {
@@ -51,6 +54,7 @@ void OrderBook::matchAsk(Order& bidOrder) {
 
             // Remove filled orders from book
             if (askOrder.quantity == 0) {
+                restingIds_.erase(askOrder.id);
                 ordersAtPrice.pop_front();
             }
         }
@@ -64,6 +68,7 @@ void OrderBook::matchAsk(Order& bidOrder) {
     // If quantity remains, rest on the Bid book
     if (bidOrder.quantity > 0) {
         bids_[bidOrder.price].push_back(bidOrder);
+        restingIds_.insert(bidOrder.id);
     }
 }
 
@@ -96,6 +101,7 @@ void OrderBook::matchBid(Order& askOrder) {
             bidOrder.quantity -= tradeQty;
 
             if (bidOrder.quantity == 0) {
+                restingIds_.erase(bidOrder.id);
                 ordersAtPrice.pop_front();
             }
         }
@@ -107,6 +113,7 @@ void OrderBook::matchBid(Order& askOrder) {
 
     if (askOrder.quantity > 0) {
         asks_[askOrder.price].push_back(askOrder);
+        restingIds_.insert(askOrder.id);
     }
 }
 
