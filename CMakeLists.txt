@@ -43,3 +43,7 @@ include(GoogleTest)
 add_executable(lob_tests tests/book_test.cpp)
 target_link_libraries(lob_tests PRIVATE lob lob_warnings GTest::gtest_main)
 gtest_discover_tests(lob_tests)
+
+add_executable(lob_differential_test tests/differential_test.cpp)
+target_link_libraries(lob_differential_test PRIVATE lob lob_warnings GTest::gtest_main)
+gtest_discover_tests(lob_differential_test PROPERTIES TIMEOUT 1800)

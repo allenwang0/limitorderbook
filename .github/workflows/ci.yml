@@ -42,3 +42,15 @@ jobs:
         run: cmake --build --preset default
       - name: Test
         run: ctest --preset default
+
+  sanitizers:
+    name: asan-ubsan-differential
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang-18
+      CXX: clang++-18
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Debug build with ASan and UBSan, 20 seeds x 100,000 ops
+        run: cmake --workflow --preset asan
