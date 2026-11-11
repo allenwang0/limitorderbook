@@ -21,23 +21,56 @@ Result MapBook::addOrder(const Order& order) {
     if (order.quantity == 0) {
         return reject(order, RejectReason::ZeroQuantity);
     }
-    if (order.price <= 0) {
+    if (order.type != OrderType::Market && order.price <= 0) {
         return reject(order, RejectReason::InvalidPrice);
     }
     if (index_.count(order.id) != 0) {
         return reject(order, RejectReason::DuplicateId);
+    }
+    if (order.type == OrderType::PostOnly) {
+        const Levels& opposing = levels(opposite(order.side));
+        if (!opposing.empty() && crosses(order, opposing.begin()->first)) {
+            return reject(order, RejectReason::WouldCross);
+        }
     }
     return enter(order);
 }
 
 Result MapBook::enter(const Order& order) {
     emit(EventType::Accepted, RejectReason::None, order, 0, order.price, order.quantity);
+    if (order.type == OrderType::FillOrKill && fillableQuantity(order) < order.quantity) {
+        emit(EventType::Cancelled, RejectReason::None, order, 0, order.price, order.quantity);
+        return {Status::Accepted, RejectReason::None, 0, 0};
+    }
     Order remaining = order;
     const Result result = match(remaining);
-    if (remaining.quantity > 0) {
+    if (remaining.quantity == 0) {
+        return result;
+    }
+    if (order.type == OrderType::Limit || order.type == OrderType::PostOnly) {
         rest(remaining);
+    } else {
+        emit(EventType::Cancelled, RejectReason::None, order, 0, order.price, remaining.quantity);
     }
     return result;
+}
+
+bool MapBook::crosses(const Order& order, Price restingPrice) const {
+    if (order.type == OrderType::Market) {
+        return true;
+    }
+    return order.side == Side::Buy ? order.price >= restingPrice : order.price <= restingPrice;
+}
+
+Quantity MapBook::fillableQuantity(const Order& order) const {
+    Quantity available = 0;
+    for (const auto& [price, level] : levels(opposite(order.side))) {
+        if (available >= order.quantity || !crosses(order, price)) {
+            break;
+        }
+        available += level.quantity;
+    }
+    return available;
 }
 
 void MapBook::rest(const Order& order) {
@@ -99,9 +132,7 @@ Result MapBook::match(Order& order) {
     while (order.quantity > 0 && !book.empty()) {
         auto levelIt = book.begin();
         const Price levelPrice = levelIt->first;
-        const bool crosses =
-            order.side == Side::Buy ? order.price >= levelPrice : order.price <= levelPrice;
-        if (!crosses) {
+        if (!crosses(order, levelPrice)) {
             break;
         }
 

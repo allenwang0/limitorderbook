@@ -271,5 +271,90 @@ TYPED_TEST(BookTest, ModifyRejectsUnknownIdAndBadValues) {
     EXPECT_EQ(this->book.depth(Side::Buy, 10), (std::vector<LevelInfo>{{99, 5, 1}}));
 }
 
+TYPED_TEST(BookTest, MarketOrderSweepsAndNeverRests) {
+    this->book.addOrder({1, Side::Sell, 100, 2});
+    this->book.addOrder({2, Side::Sell, 150, 2});
+    this->sink.events.clear();
+    const Result result = this->book.addOrder({3, Side::Buy, 0, 5, OrderType::Market});
+
+    EXPECT_EQ(result.status, Status::Accepted);
+    EXPECT_EQ(result.filledQuantity, 4u);
+    const auto cancels = this->sink.ofType(EventType::Cancelled);
+    ASSERT_EQ(cancels.size(), 1u);
+    EXPECT_EQ(cancels[0].quantity, 1u);
+    EXPECT_FALSE(this->book.bestBid().has_value());
+    EXPECT_FALSE(this->book.bestAsk().has_value());
+}
+
+TYPED_TEST(BookTest, MarketOrderOnEmptyBookIsCancelled) {
+    this->book.addOrder({1, Side::Sell, 0, 5, OrderType::Market});
+
+    ASSERT_EQ(this->sink.events.size(), 2u);
+    EXPECT_EQ(this->sink.events[0].type, EventType::Accepted);
+    EXPECT_EQ(this->sink.events[1].type, EventType::Cancelled);
+    EXPECT_EQ(this->book.orderCount(), 0u);
+}
+
+TYPED_TEST(BookTest, ImmediateOrCancelStopsAtLimitAndCancelsRest) {
+    this->book.addOrder({1, Side::Buy, 100, 2});
+    this->book.addOrder({2, Side::Buy, 98, 2});
+    const Result result = this->book.addOrder({3, Side::Sell, 99, 5, OrderType::ImmediateOrCancel});
+
+    EXPECT_EQ(result.filledQuantity, 2u);
+    const auto cancels = this->sink.ofType(EventType::Cancelled);
+    ASSERT_EQ(cancels.size(), 1u);
+    EXPECT_EQ(cancels[0].quantity, 3u);
+    EXPECT_FALSE(this->book.bestAsk().has_value());
+    EXPECT_EQ(this->book.bestBid(), 98);
+}
+
+TYPED_TEST(BookTest, FillOrKillWithoutEnoughLiquidityDoesNothing) {
+    this->book.addOrder({1, Side::Sell, 100, 2});
+    this->book.addOrder({2, Side::Sell, 101, 2});
+    this->book.addOrder({3, Side::Sell, 103, 9});
+    this->sink.events.clear();
+    const Result result = this->book.addOrder({4, Side::Buy, 102, 5, OrderType::FillOrKill});
+
+    EXPECT_EQ(result.filledQuantity, 0u);
+    EXPECT_TRUE(this->fills().empty());
+    ASSERT_EQ(this->sink.ofType(EventType::Cancelled).size(), 1u);
+    EXPECT_EQ(this->sink.ofType(EventType::Cancelled)[0].quantity, 5u);
+    EXPECT_FALSE(this->book.bestBid().has_value());
+    EXPECT_EQ(this->book.depth(Side::Sell, 10),
+              (std::vector<LevelInfo>{{100, 2, 1}, {101, 2, 1}, {103, 9, 1}}));
+}
+
+TYPED_TEST(BookTest, FillOrKillWithEnoughLiquidityFillsCompletely) {
+    this->book.addOrder({1, Side::Sell, 100, 2});
+    this->book.addOrder({2, Side::Sell, 101, 4});
+    const Result result = this->book.addOrder({3, Side::Buy, 101, 5, OrderType::FillOrKill});
+
+    EXPECT_EQ(result.filledQuantity, 5u);
+    EXPECT_EQ(this->fills().size(), 2u);
+    EXPECT_TRUE(this->sink.ofType(EventType::Cancelled).empty());
+    EXPECT_EQ(this->book.depth(Side::Sell, 10), (std::vector<LevelInfo>{{101, 1, 1}}));
+}
+
+TYPED_TEST(BookTest, PostOnlyThatWouldCrossIsRejected) {
+    this->book.addOrder({1, Side::Sell, 100, 2});
+    this->sink.events.clear();
+    const Result result = this->book.addOrder({2, Side::Buy, 100, 1, OrderType::PostOnly});
+
+    EXPECT_EQ(result.status, Status::Rejected);
+    EXPECT_EQ(result.reason, RejectReason::WouldCross);
+    ASSERT_EQ(this->sink.events.size(), 1u);
+    EXPECT_EQ(this->sink.events[0].type, EventType::Rejected);
+    EXPECT_FALSE(this->book.bestBid().has_value());
+    EXPECT_EQ(this->book.volumeAtPrice(Side::Sell, 100), 2u);
+}
+
+TYPED_TEST(BookTest, PostOnlyThatDoesNotCrossRests) {
+    this->book.addOrder({1, Side::Sell, 100, 2});
+    const Result result = this->book.addOrder({2, Side::Buy, 99, 1, OrderType::PostOnly});
+
+    EXPECT_EQ(result.status, Status::Accepted);
+    EXPECT_EQ(this->book.bestBid(), 99);
+}
+
 } // namespace
 } // namespace lob::test
