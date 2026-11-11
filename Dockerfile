@@ -11,5 +11,5 @@ RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLOB_WERROR=ON \
     && ctest --test-dir build --output-on-failure
 
 FROM debian:bookworm-slim
-COPY --from=build /src/build/lob_sim /usr/local/bin/lob_sim
-CMD ["lob_sim"]
+COPY --from=build /src/build/lob_bench /usr/local/bin/lob_bench
+CMD ["lob_bench"]
