@@ -3,7 +3,7 @@
 #include <chrono>
 #include <random>
 #include <iomanip>
-#include "OrderBook.h"
+#include "lob/OrderBook.h"
 
 // Configuration
 const int NUM_ORDERS = 1000000;
