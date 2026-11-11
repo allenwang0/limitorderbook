@@ -1,0 +1,183 @@
+#include "RecordingSink.h"
+#include "lob/MapBook.h"
+
+#include <gtest/gtest.h>
+
+#include <string>
+#include <vector>
+
+namespace lob::test {
+namespace {
+
+template <class Book>
+class BookTest : public ::testing::Test {
+protected:
+    RecordingSink sink;
+    Book book{sink};
+
+    std::vector<Event> fills() const { return sink.ofType(EventType::Fill); }
+
+    void seed() {
+        book.addOrder({10, Side::Buy, 99, 4});
+        book.addOrder({11, Side::Sell, 101, 6});
+        sink.events.clear();
+    }
+
+    void expectSeededBookUnchanged() const {
+        EXPECT_EQ(book.depth(Side::Buy, 10), (std::vector<LevelInfo>{{99, 4, 1}}));
+        EXPECT_EQ(book.depth(Side::Sell, 10), (std::vector<LevelInfo>{{101, 6, 1}}));
+        EXPECT_TRUE(fills().empty());
+    }
+};
+
+struct BookName {
+    template <class Book>
+    static std::string GetName(int) {
+        return Book::name;
+    }
+};
+
+using Books = ::testing::Types<MapBook>;
+TYPED_TEST_SUITE(BookTest, Books, BookName);
+
+TYPED_TEST(BookTest, CrossingBuyTradesAtRestingAskPrice) {
+    this->book.addOrder({1, Side::Sell, 100, 5});
+    const Result result = this->book.addOrder({2, Side::Buy, 105, 3});
+
+    EXPECT_EQ(result.status, Status::Accepted);
+    EXPECT_EQ(result.fillCount, 1u);
+    EXPECT_EQ(result.filledQuantity, 3u);
+    ASSERT_EQ(this->fills().size(), 1u);
+    const Event fill = this->fills()[0];
+    EXPECT_EQ(fill.orderId, 2u);
+    EXPECT_EQ(fill.restingId, 1u);
+    EXPECT_EQ(fill.price, 100);
+    EXPECT_EQ(fill.quantity, 3u);
+    EXPECT_EQ(this->book.depth(Side::Sell, 10), (std::vector<LevelInfo>{{100, 2, 1}}));
+    EXPECT_FALSE(this->book.bestBid().has_value());
+}
+
+TYPED_TEST(BookTest, RejectsIdThatIsAlreadyResting) {
+    this->book.addOrder({1, Side::Buy, 100, 0});
+    this->book.addOrder({1, Side::Sell, 90, 5});
+    const Result result = this->book.addOrder({1, Side::Buy, 95, 5});
+
+    EXPECT_EQ(result.status, Status::Rejected);
+    EXPECT_EQ(result.reason, RejectReason::DuplicateId);
+    EXPECT_TRUE(this->fills().empty());
+    EXPECT_EQ(this->book.depth(Side::Sell, 10), (std::vector<LevelInfo>{{90, 5, 1}}));
+    EXPECT_FALSE(this->book.bestBid().has_value());
+}
+
+TYPED_TEST(BookTest, RejectsZeroQuantity) {
+    this->seed();
+    const Result result = this->book.addOrder({1, Side::Buy, 101, 0});
+
+    EXPECT_EQ(result.reason, RejectReason::ZeroQuantity);
+    this->expectSeededBookUnchanged();
+}
+
+TYPED_TEST(BookTest, RejectsZeroPrice) {
+    this->seed();
+    const Result result = this->book.addOrder({1, Side::Sell, 0, 3});
+
+    EXPECT_EQ(result.reason, RejectReason::InvalidPrice);
+    this->expectSeededBookUnchanged();
+}
+
+TYPED_TEST(BookTest, RejectsNegativePrice) {
+    this->seed();
+    const Result result = this->book.addOrder({1, Side::Buy, -5, 3});
+
+    EXPECT_EQ(result.reason, RejectReason::InvalidPrice);
+    this->expectSeededBookUnchanged();
+}
+
+TYPED_TEST(BookTest, DuplicateIdLeavesBookUnchanged) {
+    this->seed();
+    const Result result = this->book.addOrder({11, Side::Buy, 101, 6});
+
+    EXPECT_EQ(result.status, Status::Rejected);
+    EXPECT_EQ(result.reason, RejectReason::DuplicateId);
+    this->expectSeededBookUnchanged();
+}
+
+TYPED_TEST(BookTest, RejectionEmitsOnlyARejectedEvent) {
+    this->seed();
+    this->book.addOrder({1, Side::Buy, 101, 0});
+
+    ASSERT_EQ(this->sink.events.size(), 1u);
+    EXPECT_EQ(this->sink.events[0].type, EventType::Rejected);
+    EXPECT_EQ(this->sink.events[0].reason, RejectReason::ZeroQuantity);
+}
+
+TYPED_TEST(BookTest, AsksAtOnePriceFillInArrivalOrder) {
+    this->book.addOrder({1, Side::Sell, 100, 2});
+    this->book.addOrder({2, Side::Sell, 100, 2});
+    this->book.addOrder({3, Side::Buy, 100, 3});
+
+    const auto fills = this->fills();
+    ASSERT_EQ(fills.size(), 2u);
+    EXPECT_EQ(fills[0].restingId, 1u);
+    EXPECT_EQ(fills[0].quantity, 2u);
+    EXPECT_EQ(fills[1].restingId, 2u);
+    EXPECT_EQ(fills[1].quantity, 1u);
+}
+
+TYPED_TEST(BookTest, PartialFillKeepsRemainderPriority) {
+    this->book.addOrder({1, Side::Sell, 100, 5});
+    this->book.addOrder({2, Side::Sell, 100, 5});
+    this->book.addOrder({3, Side::Buy, 100, 2});
+    this->sink.events.clear();
+    this->book.addOrder({4, Side::Buy, 100, 4});
+
+    const auto fills = this->fills();
+    ASSERT_EQ(fills.size(), 2u);
+    EXPECT_EQ(fills[0].restingId, 1u);
+    EXPECT_EQ(fills[0].quantity, 3u);
+    EXPECT_EQ(fills[1].restingId, 2u);
+    EXPECT_EQ(fills[1].quantity, 1u);
+}
+
+TYPED_TEST(BookTest, SweepFillsEachLevelAtItsRestingPrice) {
+    this->book.addOrder({1, Side::Sell, 100, 1});
+    this->book.addOrder({2, Side::Sell, 101, 1});
+    this->book.addOrder({3, Side::Sell, 102, 1});
+    this->book.addOrder({4, Side::Sell, 103, 1});
+    const Result result = this->book.addOrder({5, Side::Buy, 102, 5});
+
+    const auto fills = this->fills();
+    ASSERT_EQ(fills.size(), 3u);
+    EXPECT_EQ(fills[0].price, 100);
+    EXPECT_EQ(fills[1].price, 101);
+    EXPECT_EQ(fills[2].price, 102);
+    EXPECT_EQ(result.filledQuantity, 3u);
+    EXPECT_EQ(this->book.bestBid(), 102);
+    EXPECT_EQ(this->book.volumeAtPrice(Side::Buy, 102), 2u);
+    EXPECT_EQ(this->book.bestAsk(), 103);
+}
+
+TYPED_TEST(BookTest, QueriesReportAggregatesPerLevel) {
+    this->book.addOrder({1, Side::Buy, 98, 3});
+    this->book.addOrder({2, Side::Buy, 99, 4});
+    this->book.addOrder({3, Side::Buy, 99, 5});
+    this->book.addOrder({4, Side::Sell, 102, 7});
+
+    EXPECT_EQ(this->book.bestBid(), 99);
+    EXPECT_EQ(this->book.bestAsk(), 102);
+    EXPECT_EQ(this->book.spread(), 3);
+    EXPECT_EQ(this->book.depth(Side::Buy, 10), (std::vector<LevelInfo>{{99, 9, 2}, {98, 3, 1}}));
+    EXPECT_EQ(this->book.depth(Side::Buy, 1), (std::vector<LevelInfo>{{99, 9, 2}}));
+    EXPECT_EQ(this->book.volumeAtPrice(Side::Buy, 99), 9u);
+    EXPECT_EQ(this->book.volumeAtPrice(Side::Sell, 99), 0u);
+}
+
+TYPED_TEST(BookTest, EmptyBookHasNoTouch) {
+    EXPECT_FALSE(this->book.bestBid().has_value());
+    EXPECT_FALSE(this->book.bestAsk().has_value());
+    EXPECT_FALSE(this->book.spread().has_value());
+    EXPECT_TRUE(this->book.depth(Side::Buy, 10).empty());
+}
+
+} // namespace
+} // namespace lob::test

@@ -1,4 +1,4 @@
-#include "lob/OrderBook.h"
+#include "lob/MapBook.h"
 
 #include <benchmark/benchmark.h>
 
@@ -9,9 +9,11 @@
 
 namespace {
 
-struct CountingSink : TradeSink {
+using namespace lob;
+
+struct CountingSink : EventSink {
     std::size_t trades = 0;
-    void onTrade(const Trade&) override { ++trades; }
+    void onEvent(const Event& event) override { trades += event.type == EventType::Fill; }
 };
 
 // Random walk around $100.00 (10000 ticks) with steps of up to 50 ticks.
@@ -39,7 +41,7 @@ void BM_RandomWalkAdds(benchmark::State& state) {
     for (auto _ : state) {
         state.PauseTiming();
         CountingSink sink;
-        OrderBook book(sink);
+        MapBook book(sink);
         state.ResumeTiming();
         for (const Order& order : orders) {
             benchmark::DoNotOptimize(book.addOrder(order));
