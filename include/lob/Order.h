@@ -41,3 +41,9 @@ struct Trade {
                   << " Qty:" << trade.quantity << "]";
     }
 };
+
+class TradeSink {
+public:
+    virtual ~TradeSink() = default;
+    virtual void onTrade(const Trade& trade) = 0;
+};

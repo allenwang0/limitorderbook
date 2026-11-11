@@ -1,9 +1,6 @@
 #include "lob/OrderBook.h"
 
-OrderBook::OrderBook() {
-    // Reserve space for trades to minimize reallocation during benchmarking
-    trades_.reserve(100000); 
-}
+OrderBook::OrderBook(TradeSink& sink) : sink_(sink) {}
 
 AddResult OrderBook::addOrder(Order order) {
     if (order.quantity == 0) {
@@ -15,19 +12,14 @@ AddResult OrderBook::addOrder(Order order) {
     if (restingIds_.count(order.id) != 0) {
         return {AddStatus::Rejected, RejectReason::DuplicateId, 0, 0};
     }
-    const std::size_t tradesBefore = trades_.size();
     const Quantity requested = order.quantity;
-    if (order.side == Side::Buy) {
-        matchAsk(order);
-    } else {
-        matchBid(order);
-    }
-    return {AddStatus::Accepted, RejectReason::None, trades_.size() - tradesBefore,
-            requested - order.quantity};
+    const std::size_t fills = order.side == Side::Buy ? matchAsk(order) : matchBid(order);
+    return {AddStatus::Accepted, RejectReason::None, fills, requested - order.quantity};
 }
 
 // Processing a new BUY order (matches against Ask book)
-void OrderBook::matchAsk(Order& bidOrder) {
+std::size_t OrderBook::matchAsk(Order& bidOrder) {
+    std::size_t fills = 0;
     while (bidOrder.quantity > 0 && !asks_.empty()) {
         auto bestAskIter = asks_.begin();
         Price bestAskPrice = bestAskIter->first;
@@ -47,12 +39,13 @@ void OrderBook::matchAsk(Order& bidOrder) {
             Quantity tradeQty = std::min(bidOrder.quantity, askOrder.quantity);
             
             // Generate Trade
-            trades_.push_back({
+            sink_.onTrade({
                 bidOrder.id,
                 askOrder.id,
                 askOrder.price, // Trade happens at the resting order's price
                 tradeQty
             });
+            ++fills;
 
             // Update quantities
             bidOrder.quantity -= tradeQty;
@@ -76,10 +69,12 @@ void OrderBook::matchAsk(Order& bidOrder) {
         bids_[bidOrder.price].push_back(bidOrder);
         restingIds_.insert(bidOrder.id);
     }
+    return fills;
 }
 
 // Processing a new SELL order (matches against Bid book)
-void OrderBook::matchBid(Order& askOrder) {
+std::size_t OrderBook::matchBid(Order& askOrder) {
+    std::size_t fills = 0;
     while (askOrder.quantity > 0 && !bids_.empty()) {
         auto bestBidIter = bids_.begin();
         Price bestBidPrice = bestBidIter->first;
@@ -96,12 +91,13 @@ void OrderBook::matchBid(Order& askOrder) {
             
             Quantity tradeQty = std::min(askOrder.quantity, bidOrder.quantity);
             
-            trades_.push_back({
+            sink_.onTrade({
                 bidOrder.id,
                 askOrder.id,
                 bidOrder.price,
                 tradeQty
             });
+            ++fills;
 
             askOrder.quantity -= tradeQty;
             bidOrder.quantity -= tradeQty;
@@ -121,10 +117,10 @@ void OrderBook::matchBid(Order& askOrder) {
         asks_[askOrder.price].push_back(askOrder);
         restingIds_.insert(askOrder.id);
     }
+    return fills;
 }
 
 bool OrderBook::isBidEmpty() const { return bids_.empty(); }
 bool OrderBook::isAskEmpty() const { return asks_.empty(); }
 const OrderBook::Bids& OrderBook::getBids() const { return bids_; }
 const OrderBook::Asks& OrderBook::getAsks() const { return asks_; }
-const std::vector<Trade>& OrderBook::getTrades() const { return trades_; }
