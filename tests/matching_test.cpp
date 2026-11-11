@@ -20,3 +20,16 @@ TEST(Matching, CrossingBuyTradesAtRestingAskPrice) {
     EXPECT_EQ(book.getAsks().at(100).front().quantity, 2u);
     EXPECT_TRUE(book.isBidEmpty());
 }
+
+TEST(Validation, RejectsIdThatIsAlreadyResting) {
+    OrderBook book;
+    book.addOrder({1, Side::Buy, 100, 0});
+    book.addOrder({1, Side::Sell, 90, 5});
+    const AddResult result = book.addOrder({1, Side::Buy, 95, 5});
+
+    EXPECT_EQ(result.status, AddStatus::Rejected);
+    EXPECT_EQ(result.reason, RejectReason::DuplicateId);
+    EXPECT_TRUE(book.getTrades().empty());
+    EXPECT_EQ(book.getAsks().at(90).front().quantity, 5u);
+    EXPECT_TRUE(book.isBidEmpty());
+}

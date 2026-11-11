@@ -2,6 +2,7 @@
 #include "Order.h"
 #include <map>
 #include <list>
+#include <unordered_set>
 #include <vector>
 #include <cstddef>
 #include <functional>
@@ -44,6 +45,7 @@ private:
     Bids bids_;
     Asks asks_;
     std::vector<Trade> trades_; // Log of all executions
+    std::unordered_set<OrderId> restingIds_;
 
     // Internal helpers
     void matchAsk(Order& bidOrder);
