@@ -21,7 +21,8 @@ public:
     Result addOrder(const Order& order);
     Result cancelOrder(OrderId id);
     // Same price and a smaller or equal quantity keeps queue position. Any
-    // other change cancels and re-adds the order at the back of its level.
+    // other change cancels the order and re-adds it as a Limit order at the
+    // back of its new level.
     Result modifyOrder(OrderId id, Quantity newQuantity, Price newPrice);
 
     std::optional<Price> bestBid() const;
@@ -62,6 +63,8 @@ private:
 
     Result reject(const Order& order, RejectReason reason);
     Result enter(const Order& order);
+    bool crosses(const Order& order, Price restingPrice) const;
+    Quantity fillableQuantity(const Order& order) const;
     Result match(Order& order);
     void rest(const Order& order);
     void remove(const Locator& locator);

@@ -14,16 +14,24 @@ enum class Side : uint8_t { Buy, Sell };
 
 constexpr Side opposite(Side side) { return side == Side::Buy ? Side::Sell : Side::Buy; }
 
+// Limit: match, then rest the remainder.
+// Market: match at any price, cancel the remainder. Price is ignored.
+// ImmediateOrCancel: match up to the limit price, cancel the remainder.
+// FillOrKill: fill the whole quantity up to the limit price or do nothing.
+// PostOnly: rest without matching; rejected if it would cross.
+enum class OrderType : uint8_t { Limit, Market, ImmediateOrCancel, FillOrKill, PostOnly };
+
 struct Order {
     OrderId id;
     Side side;
     Price price;
     Quantity quantity;
+    OrderType type = OrderType::Limit;
 };
 
 enum class Status : uint8_t { Accepted, Rejected };
 
-enum class RejectReason : uint8_t { None, ZeroQuantity, InvalidPrice, DuplicateId, UnknownId };
+enum class RejectReason : uint8_t { None, ZeroQuantity, InvalidPrice, DuplicateId, UnknownId, WouldCross };
 
 struct Result {
     Status status;
