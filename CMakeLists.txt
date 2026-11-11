@@ -31,7 +31,7 @@ FetchContent_Declare(benchmark
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(googletest benchmark)
 
-add_library(lob STATIC src/OrderBook.cpp)
+add_library(lob STATIC src/MapBook.cpp)
 target_include_directories(lob PUBLIC include)
 target_link_libraries(lob PRIVATE lob_warnings)
 
@@ -40,6 +40,6 @@ target_link_libraries(lob_bench PRIVATE lob lob_warnings benchmark::benchmark)
 
 enable_testing()
 include(GoogleTest)
-add_executable(lob_tests tests/matching_test.cpp)
+add_executable(lob_tests tests/book_test.cpp)
 target_link_libraries(lob_tests PRIVATE lob lob_warnings GTest::gtest_main)
 gtest_discover_tests(lob_tests)
