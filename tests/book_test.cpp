@@ -179,5 +179,97 @@ TYPED_TEST(BookTest, EmptyBookHasNoTouch) {
     EXPECT_TRUE(this->book.depth(Side::Buy, 10).empty());
 }
 
+TYPED_TEST(BookTest, CancelRemovesOrderAndReportsOpenQuantity) {
+    this->book.addOrder({1, Side::Buy, 99, 5});
+    this->book.addOrder({2, Side::Buy, 99, 3});
+    this->sink.events.clear();
+    const Result result = this->book.cancelOrder(1);
+
+    EXPECT_EQ(result.status, Status::Accepted);
+    ASSERT_EQ(this->sink.events.size(), 1u);
+    EXPECT_EQ(this->sink.events[0].type, EventType::Cancelled);
+    EXPECT_EQ(this->sink.events[0].price, 99);
+    EXPECT_EQ(this->sink.events[0].quantity, 5u);
+    EXPECT_EQ(this->book.depth(Side::Buy, 10), (std::vector<LevelInfo>{{99, 3, 1}}));
+    EXPECT_TRUE(this->book.checkInvariants());
+}
+
+TYPED_TEST(BookTest, CancelOfLastOrderRemovesLevel) {
+    this->book.addOrder({1, Side::Sell, 101, 5});
+    this->book.addOrder({2, Side::Sell, 102, 5});
+    this->book.cancelOrder(1);
+
+    EXPECT_EQ(this->book.bestAsk(), 102);
+    EXPECT_EQ(this->book.volumeAtPrice(Side::Sell, 101), 0u);
+    EXPECT_EQ(this->book.orderCount(), 1u);
+}
+
+TYPED_TEST(BookTest, CancelOfUnknownIdIsRejected) {
+    this->book.addOrder({1, Side::Buy, 99, 5});
+    this->sink.events.clear();
+    const Result result = this->book.cancelOrder(42);
+
+    EXPECT_EQ(result.status, Status::Rejected);
+    EXPECT_EQ(result.reason, RejectReason::UnknownId);
+    ASSERT_EQ(this->sink.events.size(), 1u);
+    EXPECT_EQ(this->sink.events[0].type, EventType::Rejected);
+    EXPECT_EQ(this->book.orderCount(), 1u);
+}
+
+TYPED_TEST(BookTest, CancelledIdCanBeReused) {
+    this->book.addOrder({1, Side::Buy, 99, 5});
+    this->book.cancelOrder(1);
+
+    EXPECT_EQ(this->book.addOrder({1, Side::Buy, 98, 2}).status, Status::Accepted);
+}
+
+TYPED_TEST(BookTest, SizeReductionKeepsQueuePosition) {
+    this->book.addOrder({1, Side::Sell, 100, 5});
+    this->book.addOrder({2, Side::Sell, 100, 5});
+    const Result result = this->book.modifyOrder(1, 2, 100);
+    this->sink.events.clear();
+    this->book.addOrder({3, Side::Buy, 100, 1});
+
+    EXPECT_EQ(result.status, Status::Accepted);
+    ASSERT_EQ(this->fills().size(), 1u);
+    EXPECT_EQ(this->fills()[0].restingId, 1u);
+    EXPECT_EQ(this->book.volumeAtPrice(Side::Sell, 100), 6u);
+}
+
+TYPED_TEST(BookTest, SizeIncreaseLosesQueuePosition) {
+    this->book.addOrder({1, Side::Sell, 100, 5});
+    this->book.addOrder({2, Side::Sell, 100, 5});
+    this->book.modifyOrder(1, 8, 100);
+    this->sink.events.clear();
+    this->book.addOrder({3, Side::Buy, 100, 1});
+
+    ASSERT_EQ(this->fills().size(), 1u);
+    EXPECT_EQ(this->fills()[0].restingId, 2u);
+    EXPECT_EQ(this->book.volumeAtPrice(Side::Sell, 100), 12u);
+}
+
+TYPED_TEST(BookTest, PriceChangeLosesQueuePositionAndCanTrade) {
+    this->book.addOrder({1, Side::Buy, 99, 5});
+    this->book.addOrder({2, Side::Sell, 101, 3});
+    this->sink.events.clear();
+    const Result result = this->book.modifyOrder(1, 5, 101);
+
+    EXPECT_EQ(result.filledQuantity, 3u);
+    ASSERT_EQ(this->fills().size(), 1u);
+    EXPECT_EQ(this->fills()[0].orderId, 1u);
+    EXPECT_EQ(this->fills()[0].price, 101);
+    EXPECT_EQ(this->book.depth(Side::Buy, 10), (std::vector<LevelInfo>{{101, 2, 1}}));
+    EXPECT_FALSE(this->book.bestAsk().has_value());
+}
+
+TYPED_TEST(BookTest, ModifyRejectsUnknownIdAndBadValues) {
+    this->book.addOrder({1, Side::Buy, 99, 5});
+
+    EXPECT_EQ(this->book.modifyOrder(2, 5, 99).reason, RejectReason::UnknownId);
+    EXPECT_EQ(this->book.modifyOrder(1, 0, 99).reason, RejectReason::ZeroQuantity);
+    EXPECT_EQ(this->book.modifyOrder(1, 5, 0).reason, RejectReason::InvalidPrice);
+    EXPECT_EQ(this->book.depth(Side::Buy, 10), (std::vector<LevelInfo>{{99, 5, 1}}));
+}
+
 } // namespace
 } // namespace lob::test
