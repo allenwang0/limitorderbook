@@ -21,7 +21,7 @@ std::vector<Order> generateOrders(int count) {
 
     Price currentPrice = START_PRICE;
 
-    for (OrderId i = 1; i <= count; ++i) {
+    for (OrderId i = 1; i <= static_cast<OrderId>(count); ++i) {
         Side side = (sideDist(rng) == 0) ? Side::Buy : Side::Sell;
         
         // Random walk price generation
