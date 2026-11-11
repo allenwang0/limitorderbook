@@ -23,7 +23,7 @@ struct Order {
 
 enum class Status : uint8_t { Accepted, Rejected };
 
-enum class RejectReason : uint8_t { None, ZeroQuantity, InvalidPrice, DuplicateId };
+enum class RejectReason : uint8_t { None, ZeroQuantity, InvalidPrice, DuplicateId, UnknownId };
 
 struct Result {
     Status status;
@@ -32,10 +32,11 @@ struct Result {
     Quantity filledQuantity;
 };
 
-enum class EventType : uint8_t { Accepted, Fill, Rejected };
+enum class EventType : uint8_t { Accepted, Fill, Cancelled, Rejected };
 
 // Fill: orderId is the incoming order, restingId the order it traded with,
 // side the incoming order's side and price the resting order's price.
+// Cancelled: quantity is the open quantity removed from the book.
 struct Event {
     EventType type;
     RejectReason reason;

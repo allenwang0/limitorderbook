@@ -6,7 +6,7 @@
 #include <list>
 #include <map>
 #include <optional>
-#include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 namespace lob {
@@ -19,12 +19,18 @@ public:
     explicit MapBook(EventSink& sink);
 
     Result addOrder(const Order& order);
+    Result cancelOrder(OrderId id);
+    // Same price and a smaller or equal quantity keeps queue position. Any
+    // other change cancels and re-adds the order at the back of its level.
+    Result modifyOrder(OrderId id, Quantity newQuantity, Price newPrice);
 
     std::optional<Price> bestBid() const;
     std::optional<Price> bestAsk() const;
     std::optional<Price> spread() const;
     std::vector<LevelInfo> depth(Side side, std::size_t levels) const;
     Quantity volumeAtPrice(Side side, Price price) const;
+    std::size_t orderCount() const { return index_.size(); }
+    bool checkInvariants() const;
 
 private:
     struct Resting {
@@ -45,17 +51,27 @@ private:
 
     using Levels = std::map<Price, Level, BestFirst>;
 
+    struct Locator {
+        Side side;
+        Levels::iterator level;
+        std::list<Resting>::iterator order;
+    };
+
     Levels& levels(Side side) { return side == Side::Buy ? bids_ : asks_; }
     const Levels& levels(Side side) const { return side == Side::Buy ? bids_ : asks_; }
 
+    Result reject(const Order& order, RejectReason reason);
+    Result enter(const Order& order);
     Result match(Order& order);
+    void rest(const Order& order);
+    void remove(const Locator& locator);
     void emit(EventType type, RejectReason reason, const Order& order, OrderId restingId,
               Price price, Quantity quantity);
 
     EventSink& sink_;
     Levels bids_{BestFirst{true}};
     Levels asks_{BestFirst{false}};
-    std::unordered_set<OrderId> restingIds_;
+    std::unordered_map<OrderId, Locator> index_;
 };
 
 } // namespace lob
