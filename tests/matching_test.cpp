@@ -5,7 +5,11 @@
 TEST(Matching, CrossingBuyTradesAtRestingAskPrice) {
     OrderBook book;
     book.addOrder({1, Side::Sell, 100, 5});
-    book.addOrder({2, Side::Buy, 105, 3});
+    const AddResult result = book.addOrder({2, Side::Buy, 105, 3});
+
+    EXPECT_EQ(result.status, AddStatus::Accepted);
+    EXPECT_EQ(result.fillCount, 1u);
+    EXPECT_EQ(result.filledQuantity, 3u);
 
     ASSERT_EQ(book.getTrades().size(), 1u);
     const Trade& t = book.getTrades()[0];

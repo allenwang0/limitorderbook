@@ -3,7 +3,19 @@
 #include <map>
 #include <list>
 #include <vector>
+#include <cstddef>
 #include <functional>
+
+enum class AddStatus { Accepted, Rejected };
+
+enum class RejectReason { None, ZeroQuantity, InvalidPrice, DuplicateId };
+
+struct AddResult {
+    AddStatus status;
+    RejectReason reason;
+    std::size_t fillCount;
+    Quantity filledQuantity;
+};
 
 class OrderBook {
 public:
@@ -17,7 +29,7 @@ public:
     OrderBook();
 
     // Core matching logic
-    void addOrder(Order order);
+    AddResult addOrder(Order order);
 
     // Getters for analysis
     bool isBidEmpty() const;
