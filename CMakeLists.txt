@@ -35,8 +35,8 @@ add_library(lob STATIC src/OrderBook.cpp)
 target_include_directories(lob PUBLIC include)
 target_link_libraries(lob PRIVATE lob_warnings)
 
-add_executable(lob_sim main.cpp)
-target_link_libraries(lob_sim PRIVATE lob lob_warnings)
+add_executable(lob_bench bench/lob_bench.cpp)
+target_link_libraries(lob_bench PRIVATE lob lob_warnings benchmark::benchmark)
 
 enable_testing()
 include(GoogleTest)
