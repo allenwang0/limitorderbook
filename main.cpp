@@ -41,7 +41,11 @@ int main() {
     std::cout << "Generating " << NUM_ORDERS << " random orders..." << std::endl;
     auto orders = generateOrders(NUM_ORDERS);
     
-    OrderBook book;
+    struct CountingSink : TradeSink {
+        std::size_t trades = 0;
+        void onTrade(const Trade&) override { ++trades; }
+    } sink;
+    OrderBook book(sink);
 
     std::cout << "Starting benchmark..." << std::endl;
 
@@ -65,7 +69,7 @@ int main() {
     std::cout << "Orders Processed: " << NUM_ORDERS << std::endl;
     std::cout << "Time Taken:       " << duration.count() << " ms" << std::endl;
     std::cout << "Throughput:       " << std::fixed << std::setprecision(2) << ops << " orders/sec" << std::endl;
-    std::cout << "Trades Executed:  " << book.getTrades().size() << std::endl;
+    std::cout << "Trades Executed:  " << sink.trades << std::endl;
     std::cout << "--------------------------------" << std::endl;
 
     return 0;

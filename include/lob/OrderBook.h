@@ -3,7 +3,6 @@
 #include <map>
 #include <list>
 #include <unordered_set>
-#include <vector>
 #include <cstddef>
 #include <functional>
 
@@ -27,7 +26,7 @@ public:
     using Bids = std::map<Price, std::list<Order>, std::greater<Price>>;
     using Asks = std::map<Price, std::list<Order>, std::less<Price>>;
 
-    OrderBook();
+    explicit OrderBook(TradeSink& sink);
 
     // Core matching logic
     AddResult addOrder(Order order);
@@ -37,17 +36,14 @@ public:
     bool isAskEmpty() const;
     const Bids& getBids() const;
     const Asks& getAsks() const;
-    
-    // Retrieve executed trades for this session
-    const std::vector<Trade>& getTrades() const;
 
 private:
     Bids bids_;
     Asks asks_;
-    std::vector<Trade> trades_; // Log of all executions
+    TradeSink& sink_;
     std::unordered_set<OrderId> restingIds_;
 
     // Internal helpers
-    void matchAsk(Order& bidOrder);
-    void matchBid(Order& askOrder);
+    std::size_t matchAsk(Order& bidOrder);
+    std::size_t matchBid(Order& askOrder);
 };
