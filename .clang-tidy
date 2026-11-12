@@ -7,3 +7,4 @@ Checks: >
   -bugprone-easily-swappable-parameters
 WarningsAsErrors: '*'
 HeaderFilterRegex: '(include|src|bench|tools|tests)/'
+ExcludeHeaderFilterRegex: '_deps'

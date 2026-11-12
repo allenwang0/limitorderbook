@@ -8,6 +8,7 @@
 
 #include "lob/MapBook.h"
 
+#include <exception>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -23,10 +24,10 @@ constexpr std::size_t kDepthLevels = 10;
 
 struct CollectingSink : EventSink {
     std::vector<Event> events;
-    void onEvent(const Event &event) override { events.push_back(event); }
+    void onEvent(const Event& event) override { events.push_back(event); }
 };
 
-const char *typeName(EventType type) {
+const char* typeName(EventType type) {
     switch (type) {
     case EventType::Accepted:
         return "accepted";
@@ -40,7 +41,7 @@ const char *typeName(EventType type) {
     return "unknown";
 }
 
-const char *reasonName(RejectReason reason) {
+const char* reasonName(RejectReason reason) {
     switch (reason) {
     case RejectReason::None:
         return "none";
@@ -58,7 +59,7 @@ const char *reasonName(RejectReason reason) {
     return "unknown";
 }
 
-std::optional<OrderType> parseType(const std::string &text) {
+std::optional<OrderType> parseType(const std::string& text) {
     if (text == "LIMIT") {
         return OrderType::Limit;
     }
@@ -77,7 +78,7 @@ std::optional<OrderType> parseType(const std::string &text) {
     return std::nullopt;
 }
 
-std::string jsonEscape(const std::string &text) {
+std::string jsonEscape(const std::string& text) {
     std::string out;
     for (const char c : text) {
         if (c == '"' || c == '\\') {
@@ -88,7 +89,7 @@ std::string jsonEscape(const std::string &text) {
     return out;
 }
 
-void writeLevels(std::ostream &out, const std::vector<LevelInfo> &levels) {
+void writeLevels(std::ostream& out, const std::vector<LevelInfo>& levels) {
     out << '[';
     for (std::size_t i = 0; i < levels.size(); ++i) {
         out << (i ? "," : "") << '[' << levels[i].price << ',' << levels[i].quantity << ','
@@ -97,11 +98,11 @@ void writeLevels(std::ostream &out, const std::vector<LevelInfo> &levels) {
     out << ']';
 }
 
-void writeLine(std::ostream &out, std::size_t lineNumber, const std::string &command,
-               const std::vector<Event> &events, const MapBook &book) {
+void writeLine(std::ostream& out, std::size_t lineNumber, const std::string& command,
+               const std::vector<Event>& events, const MapBook& book) {
     out << "{\"line\":" << lineNumber << ",\"cmd\":\"" << jsonEscape(command) << "\",\"events\":[";
     for (std::size_t i = 0; i < events.size(); ++i) {
-        const Event &e = events[i];
+        const Event& e = events[i];
         out << (i ? "," : "") << "{\"type\":\"" << typeName(e.type) << "\",\"id\":" << e.orderId
             << ",\"side\":\"" << (e.side == Side::Buy ? 'B' : 'S') << "\",\"price\":" << e.price
             << ",\"qty\":" << e.quantity;
@@ -121,7 +122,7 @@ void writeLine(std::ostream &out, std::size_t lineNumber, const std::string &com
 }
 
 // Applies one script line. Returns an error message, or nothing on success.
-std::optional<std::string> apply(MapBook &book, const std::string &line) {
+std::optional<std::string> apply(MapBook& book, const std::string& line) {
     std::istringstream in(line);
     std::string verb;
     in >> verb;
@@ -164,9 +165,7 @@ std::optional<std::string> apply(MapBook &book, const std::string &line) {
     return std::nullopt;
 }
 
-} // namespace
-
-int main(int argc, char **argv) {
+int run(int argc, char** argv) {
     if (argc > 2) {
         std::cerr << "usage: lob_replay [script]   (reads stdin when no script is given)\n";
         return 2;
@@ -179,7 +178,7 @@ int main(int argc, char **argv) {
             return 2;
         }
     }
-    std::istream &input = argc == 2 ? file : std::cin;
+    std::istream& input = argc == 2 ? file : std::cin;
 
     CollectingSink sink;
     MapBook book(sink);
@@ -201,4 +200,15 @@ int main(int argc, char **argv) {
         writeLine(std::cout, lineNumber, command, sink.events, book);
     }
     return 0;
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    try {
+        return run(argc, argv);
+    } catch (const std::exception& error) {
+        std::cerr << "lob_replay: " << error.what() << '\n';
+        return 1;
+    }
 }
