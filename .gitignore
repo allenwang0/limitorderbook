@@ -4,3 +4,4 @@ data/
 *.o
 .DS_Store
 .venv/
+__pycache__/
