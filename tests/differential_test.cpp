@@ -120,12 +120,12 @@ private:
 };
 
 template <class Book>
-struct Harness {
+struct Runner {
     RecordingSink sink;
     Book book;
 
     template <class... Args>
-    explicit Harness(Args... args) : book(sink, args...) {}
+    explicit Runner(Args... args) : book(sink, args...) {}
 
     Result apply(const Op& op) {
         sink.events.clear();
@@ -147,8 +147,8 @@ bool sameResult(const Result& a, const Result& b) {
 }
 
 template <class Book>
-::testing::AssertionResult matchesReference(Harness<Book>& subject, const Result& result,
-                                            Harness<NaiveBook>& reference, const Result& expected) {
+::testing::AssertionResult matchesReference(Runner<Book>& subject, const Result& result,
+                                            Runner<NaiveBook>& reference, const Result& expected) {
     const char* name = Book::name;
     if (!sameResult(result, expected)) {
         return ::testing::AssertionFailure() << name << " result differs";
@@ -184,12 +184,12 @@ TEST(Differential, BooksAgreeWithNaiveReference) {
 
     for (uint64_t seed = 1; seed <= seeds; ++seed) {
         FlowGenerator flow(seed);
-        Harness<NaiveBook> reference;
-        Harness<MapBook> map;
-        Harness<FlatBook> flat;
+        Runner<NaiveBook> reference;
+        Runner<MapBook> map;
+        Runner<FlatBook> flat;
         // A 16-tick window puts most orders in the std::map fallback and
         // moves the best price across the window edge constantly.
-        Harness<FlatBook> narrowFlat(Price{9'992}, std::size_t{16});
+        Runner<FlatBook> narrowFlat(Price{9'992}, std::size_t{16});
         for (std::size_t i = 0; i < opsPerSeed; ++i) {
             const Op op = flow.next(reference.book.restingIds());
             const Result expected = reference.apply(op);
