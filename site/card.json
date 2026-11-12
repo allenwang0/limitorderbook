@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "repo": "limitorderbook",
+  "sha": "346f4def279142113642577ace8843926ba3b014",
+  "generated_at": "2026-11-12T05:55:08Z",
+  "command": "scripts/run_bench.sh",
+  "data_note": "Seeded synthetic order flow, 55/40/5 add/cancel/market, MapBook, Apple M5 Pro, Apple LLVM 21.0.0 (clang-2100.4.1.1)",
+  "metric": {
+    "label": "Median add latency",
+    "value": 41.0,
+    "unit": "ns",
+    "higher_is_better": false
+  },
+  "takeaway": "MapBook p99: add 84, cancel 42, match 125 ns; 31.1M msgs/s (32 ns mean); 41 ns clock tick.",
+  "chart": {
+    "type": "interval",
+    "x_label": "Latency",
+    "x_unit": "ns",
+    "x_scale": "log",
+    "rows": [
+      {
+        "label": "add",
+        "low": 41.0,
+        "mid": 42.0,
+        "high": 84.0
+      },
+      {
+        "label": "cancel",
+        "low": 41.0,
+        "mid": 42.0,
+        "high": 42.0
+      },
+      {
+        "label": "match",
+        "low": 42.0,
+        "mid": 83.0,
+        "high": 125.0
+      }
+    ]
+  }
+}
