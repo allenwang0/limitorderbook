@@ -1,0 +1,4 @@
+{"line":2,"cmd":"ADD 1 S 101 5","events":[{"type":"accepted","id":1,"side":"S","price":101,"qty":5}],"bids":[],"asks":[[101,5,1]]}
+{"line":3,"cmd":"ADD 2 S 102 5","events":[{"type":"accepted","id":2,"side":"S","price":102,"qty":5}],"bids":[],"asks":[[101,5,1],[102,5,1]]}
+{"line":4,"cmd":"ADD 3 B 102 7","events":[{"type":"accepted","id":3,"side":"B","price":102,"qty":7},{"type":"fill","id":3,"side":"B","price":101,"qty":5,"resting_id":1},{"type":"fill","id":3,"side":"B","price":102,"qty":2,"resting_id":2}],"bids":[],"asks":[[102,3,1]]}
+{"line":5,"cmd":"CXL 1","events":[{"type":"rejected","id":1,"side":"B","price":0,"qty":0,"reason":"unknown_id"}],"bids":[],"asks":[[102,3,1]]}
