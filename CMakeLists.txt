@@ -35,8 +35,25 @@ add_library(lob STATIC src/MapBook.cpp src/FlatBook.cpp)
 target_include_directories(lob PUBLIC include)
 target_link_libraries(lob PRIVATE lob_warnings)
 
+execute_process(COMMAND git rev-parse HEAD
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  OUTPUT_VARIABLE LOB_GIT_SHA OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(APPLE)
+  execute_process(COMMAND sysctl -n machdep.cpu.brand_string
+    OUTPUT_VARIABLE LOB_CPU OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+elseif(EXISTS /proc/cpuinfo)
+  file(STRINGS /proc/cpuinfo LOB_CPU_LINE REGEX "^model name" LIMIT_COUNT 1)
+  string(REGEX REPLACE "^model name[ \t]*:[ \t]*" "" LOB_CPU "${LOB_CPU_LINE}")
+endif()
+string(TOUPPER "${CMAKE_BUILD_TYPE}" LOB_BUILD_TYPE_UPPER)
+set(LOB_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${LOB_BUILD_TYPE_UPPER}} -std=c++17")
+string(STRIP "${LOB_CXX_FLAGS}" LOB_CXX_FLAGS)
+
 add_executable(lob_bench bench/lob_bench.cpp)
 target_link_libraries(lob_bench PRIVATE lob lob_warnings benchmark::benchmark)
+target_compile_definitions(lob_bench PRIVATE
+  LOB_GIT_SHA="${LOB_GIT_SHA}" LOB_CPU="${LOB_CPU}" LOB_CXX_FLAGS="${LOB_CXX_FLAGS}")
+
 
 enable_testing()
 include(GoogleTest)
