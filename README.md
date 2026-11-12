@@ -1,89 +1,150 @@
-# Python Limit Order Book
+# limitorderbook
 
-A fast, pure Python implementation of a Limit Order Book (LOB) designed for financial trading simulations and algorithmic trading research. This engine implements a standard **Price-Time Priority** matching algorithm.
+A single-instrument limit order book in C++17 with price-time priority, O(1) cancel, market, IOC, FOK and post-only orders, two book implementations checked against a naive reference, and per-operation latency percentiles.
 
-## 📖 Overview
+![Latency percentiles per operation for both books](docs/img/latency.png)
 
-The Limit Order Book is the core of any trading exchange. It manages all buy and sell orders, matches them when prices cross, and maintains the state of the market.
+![Depth ladder replay of the demo script](docs/img/replay.png)
 
-This implementation focuses on algorithmic efficiency, utilizing a combination of:
-1.  **Red-Black Trees** for price levels (sparse storage).
-2.  **Doubly Linked Lists** for order queues at each price level.
-3.  **Hash Maps** for O(1) order lookups.
+CI rebuilds the report on every push to `main` and publishes it to GitHub Pages at https://allenwang0.github.io/limitorderbook/. It has the latency and throughput charts and a step-through replay of `examples/demo_flow.txt`. All order flow on it is seeded and synthetic.
 
+## Design
 
-## ✨ Features
+Prices are integer ticks (`int64_t`), quantities and ids are `uint64_t`. A book takes an `EventSink` and reports every outcome to it as an `Event`: `Accepted`, `Fill`, `Cancelled` or `Rejected`. The book keeps no trade log of its own.
 
-* **Price-Time Priority:** Orders are matched first by price (best price wins), then by time (earliest order wins).
-* **Fast Operations:** Optimized data structures to ensure low latency for adding, canceling, and executing orders.
-* **Market & Limit Orders:** Supports standard order types.
-* **Depth Management:** Efficiently tracks volume at every price level.
-* **Order Lookup:** Instant access to any order state via internal hashmaps.
+Matching is price-time priority. An incoming order trades against the best opposite level first and, within a level, against the oldest order first. Every fill trades at the resting order's price.
 
-## 🛠 Architecture & Complexity
+Order types (`OrderType`):
 
-To achieve optimal performance in Python, the book is structured as follows:
+| Type | Behaviour |
+| :--- | :--- |
+| `Limit` | Matches up to its price, then rests the remainder. |
+| `Market` | Matches at any price and never rests; the remainder is cancelled. Its price is ignored. |
+| `ImmediateOrCancel` | Matches up to its price; the remainder is cancelled. |
+| `FillOrKill` | Sums opposite liquidity up to its price first. If that covers the whole quantity it matches; otherwise it is cancelled with no fills. |
+| `PostOnly` | Rejected with `WouldCross` if it would trade on arrival; otherwise rests. |
 
-### Data Structures
-* **`Order`**: Represents a distinct order with quantity, price, and ID.
-* **`OrderList`**: A Doubly Linked List containing all orders at a specific price. This maintains the "Time" priority.
-* **`OrderTree`**: A Red-Black Tree (AVL or RB logic) that stores `OrderList` objects sorted by price.
-* **`OrderBook`**: The manager class containing two `OrderTrees` (one for Bids, one for Asks) and a Hash Map pointing to specific orders.
+`addOrder` rejects a zero quantity, a price of zero or less on any non-market order, and an id that is already resting. `cancelOrder` and `modifyOrder` reject unknown ids.
 
-### Big-O Time Complexity
+`modifyOrder(id, newQuantity, newPrice)` follows the CME and Nasdaq rule. A size reduction at the same price changes the order in place and keeps its queue position. A size increase or a price change removes the order and adds it again as a `Limit` order at the back of its new level, so it loses priority and can trade if the new price crosses.
 
-| Operation | Complexity | Description |
+There are two implementations with the same interface:
+
+- `MapBook` keeps levels in a `std::map` and the orders at each level in a `std::list`. An `unordered_map` from id to (side, level iterator, list iterator) makes cancel a direct unlink. `lob_replay` and the example use this book.
+- `FlatBook` keeps orders in a pooled array linked by index, so resting an order after warm-up does not allocate. Levels inside a 4,096-tick window are a vector indexed by tick offset, with a `std::map` for prices outside it. The best price per side is cached. The id index is an open-addressing hash table that allocates only when it grows.
+
+Complexity, with L price levels on a side, k levels crossed by an incoming order and g empty ticks between a level that empties and the next one:
+
+| Operation | MapBook | FlatBook |
 | :--- | :--- | :--- |
-| **Add Order** | O(log M) | Where M is the number of price levels (Tree traversal). |
-| **Cancel Order** | O(1) | Direct access via Hash Map and Doubly Linked List removal. |
-| **Get Best Bid/Ask**| O(1) | Cached pointers to min/max nodes in the Tree. |
-| **Volume at Price** | O(1) | Maintained within the OrderList node. |
+| Add, resting | O(log L) | O(1) in the window, O(log L) outside it |
+| Add, crossing | O(log L + k + fills) | O(k + fills + g) |
+| Cancel | O(1) average | O(1) average, plus O(g) if it empties the best level |
+| Modify, size reduction | O(1) average | O(1) average |
+| Best bid / ask | O(1) | O(1) |
+| depth(side, n) | O(n) | O(n + g) |
+| volumeAtPrice | O(log L) | O(1) in the window, O(log L) outside it |
 
-## 📦 Installation
+## Build and test
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/allenwang0/limitorderbook.git](https://github.com/allenwang0/limitorderbook.git)
-    cd limitorderbook
-    ```
+Requires CMake 3.25+, Ninja and a C++17 compiler. GoogleTest v1.15.2 and Google Benchmark v1.9.1 come in through FetchContent.
 
-2.  **Install dependencies:**
-    This project relies on the `bintrees` library for the Red-Black tree implementation.
-    ```bash
-    pip install bintrees
-    ```
+```sh
+git clone https://github.com/allenwang0/limitorderbook.git
+cd limitorderbook
+cmake --workflow --preset default
+```
 
-## 🚀 Usage
+That configures a Release build in `build/`, builds the library, tests, `lob_bench`, `lob_replay` and `examples/basic.cpp`, and runs ctest. The sanitizer build runs the same tests in Debug with AddressSanitizer and UndefinedBehaviorSanitizer:
 
-### Basic Example
+```sh
+cmake --workflow --preset asan
+```
 
-Here is how to initialize the book, process orders, and inspect the market state.
+Run the tools:
 
-```python
-from limitorderbook import OrderBook
+```sh
+./build/lob_bench
+./build/lob_replay examples/demo_flow.txt
+```
 
-# Initialize the Order Book
-book = OrderBook()
+`lob_replay` reads `ADD <id> <B|S> <price> <qty> [LIMIT|MARKET|IOC|FOK|POST]`, `CXL <id>` and `MOD <id> <qty> <price>` lines from a file or stdin. It writes one JSON line per command with the events it produced and `depth(10)` of both sides afterwards.
 
-# Create some Limit Orders
-# Arguments: (Quote(inside, side, id, quantity, price), timestamp)
-# Side: 'bid' (buy) or 'ask' (sell)
+The report page, card and results table below come from one script:
 
-# Add a Buy Order (Bid) at $100 for 10 units
-book.process_order({'type': 'limit', 'side': 'bid', 'quantity': 10, 'price': 100, 'trade_id': 101})
+```sh
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+PATH=$PWD/.venv/bin:$PATH scripts/run_bench.sh
+```
 
-# Add a Sell Order (Ask) at $105 for 10 units
-book.process_order({'type': 'limit', 'side': 'ask', 'quantity': 10, 'price': 105, 'trade_id': 102})
+It runs `lob_bench` and `lob_replay`, then writes `results/bench.json`, `results/replay.jsonl`, `docs/index.html`, `site/card.json` and the table in this README.
 
-# Check Best Prices
-print(f"Best Bid: {book.get_best_bid()}")
-print(f"Best Ask: {book.get_best_ask()}")
+## Usage
 
-# Market Order Execution (Crossing the spread)
-# A sell order at $100 will match the existing buy order at $100
-trade = {'type': 'limit', 'side': 'ask', 'quantity': 5, 'price': 100, 'trade_id': 103}
-book.process_order(trade)
+`examples/basic.cpp`, built and run by ctest:
 
-# Check remaining volume on the original bid
-# (The original bid of 10 units should now be 5)
-print(book.get_volume_at_price('bid', 100))
+```cpp
+#include "lob/MapBook.h"
+
+#include <iostream>
+
+using namespace lob;
+
+struct PrintFills : EventSink {
+    void onEvent(const Event& event) override {
+        if (event.type == EventType::Fill) {
+            std::cout << "fill: order " << event.orderId << " bought " << event.quantity << " @ "
+                      << event.price << " from order " << event.restingId << '\n';
+        }
+    }
+};
+
+int main() {
+    PrintFills sink;
+    MapBook book(sink);
+
+    book.addOrder({1, Side::Sell, 10'050, 100});
+    book.addOrder({2, Side::Sell, 10'060, 200});
+    book.addOrder({3, Side::Buy, 10'000, 150});
+    book.addOrder({4, Side::Buy, 10'055, 120});
+    book.cancelOrder(3);
+
+    for (const LevelInfo& level : book.depth(Side::Sell, 5)) {
+        std::cout << "ask " << level.price << ": " << level.quantity << " in " << level.orderCount
+                  << " order(s)\n";
+    }
+    std::cout << "best bid: " << book.bestBid().value_or(0) << '\n';
+}
+```
+
+Output:
+
+```text
+fill: order 4 bought 100 @ 10050 from order 1
+ask 10060: 200 in 1 order(s)
+best bid: 10055
+```
+
+## Results
+
+`lob_bench` builds one seeded message stream: 55% add, 40% cancel and 5% market. Add prices sit a geometric number of ticks from the touch (mean 3 ticks) and 10% of adds are priced through it. Each book first processes 100,000 warm-up messages untimed, then each of the next 1,000,000 is timed on its own with `steady_clock`. Adds are counted as resting or crossing depending on whether they produced fills.
+
+<!-- results:start -->
+<!-- results:end -->
+
+## Testing
+
+- Unit tests (GoogleTest) run once per book. They cover arrival-order fills at one price, partial fills keeping priority, a sweep across levels at each resting price, every rejection reason, cancel and modify, and each order type.
+- The differential test drives `MapBook`, `FlatBook` and a `FlatBook` with a 16-tick window against `NaiveBook`, a reference that keeps every order in one vector and finds the best price by linear scan. A seeded generator issues adds of every type, cancels, modifies and market orders, including zero quantities, bad prices, duplicate ids and unknown ids. After every op the test requires the same result, the same events, the same `depth(10)` on both sides, the same top of book and order count, and each book's own invariants: no crossed book, level totals equal to the sum of their orders, and every indexed id resting where the index says. It runs 20 seeds of 100,000 ops each, in Release and under ASan and UBSan.
+- `lob_replay` has a golden-output test and a malformed-input test, and the report has unit tests for the card and its empty and error states, plus a Playwright check at 375px and 1280px in light and dark.
+
+## Limitations
+
+- One instrument, one thread, integer ticks.
+- No networking, persistence or market data feed.
+- All benchmark and replay flow is seeded and synthetic. The plan's LOBSTER sample replay is not implemented.
+- The clock limits the latency numbers. Percentiles at or near one clock tick are at the clock's resolution, so use the throughput figures for typical cost.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
