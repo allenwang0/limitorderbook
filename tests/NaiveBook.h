@@ -14,11 +14,11 @@ namespace lob::test {
 // index. Slow on purpose so its correctness is easy to check by reading.
 class NaiveBook {
 public:
-    static constexpr const char* name = "NaiveBook";
+    static constexpr const char *name = "NaiveBook";
 
-    explicit NaiveBook(EventSink& sink) : sink_(sink) {}
+    explicit NaiveBook(EventSink &sink) : sink_(sink) {}
 
-    Result addOrder(const Order& order) {
+    Result addOrder(const Order &order) {
         if (order.quantity == 0) {
             return reject(order, RejectReason::ZeroQuantity);
         }
@@ -75,16 +75,16 @@ public:
 
     std::vector<LevelInfo> depth(Side side, std::size_t levelCount) const {
         std::map<Price, LevelInfo> byPrice;
-        for (const Resting& resting : orders_) {
+        for (const Resting &resting : orders_) {
             if (resting.side == side) {
-                LevelInfo& level = byPrice[resting.price];
+                LevelInfo &level = byPrice[resting.price];
                 level.price = resting.price;
                 level.quantity += resting.quantity;
                 ++level.orderCount;
             }
         }
         std::vector<LevelInfo> out;
-        for (const auto& entry : byPrice) {
+        for (const auto &entry : byPrice) {
             out.push_back(entry.second);
         }
         if (side == Side::Buy) {
@@ -98,7 +98,7 @@ public:
 
     std::vector<OrderId> restingIds() const {
         std::vector<OrderId> ids;
-        for (const Resting& resting : orders_) {
+        for (const Resting &resting : orders_) {
             ids.push_back(resting.id);
         }
         return ids;
@@ -115,22 +115,22 @@ private:
 
     using Orders = std::vector<Resting>;
 
-    void emit(EventType type, const Order& order, OrderId restingId, Price price,
-              Quantity quantity, RejectReason reason = RejectReason::None) {
+    void emit(EventType type, const Order &order, OrderId restingId, Price price, Quantity quantity,
+              RejectReason reason = RejectReason::None) {
         sink_.onEvent({type, reason, order.side, order.id, restingId, price, quantity});
     }
 
-    Result reject(const Order& order, RejectReason reason) {
+    Result reject(const Order &order, RejectReason reason) {
         emit(EventType::Rejected, order, 0, order.price, order.quantity, reason);
         return {Status::Rejected, reason, 0, 0};
     }
 
     Orders::iterator find(OrderId id) {
         return std::find_if(orders_.begin(), orders_.end(),
-                            [id](const Resting& resting) { return resting.id == id; });
+                            [id](const Resting &resting) { return resting.id == id; });
     }
 
-    static bool better(const Resting& a, const Resting& b) {
+    static bool better(const Resting &a, const Resting &b) {
         if (a.price != b.price) {
             return a.side == Side::Buy ? a.price > b.price : a.price < b.price;
         }
@@ -149,7 +149,7 @@ private:
 
     std::optional<Price> bestPrice(Side side) const {
         std::optional<Price> best;
-        for (const Resting& resting : orders_) {
+        for (const Resting &resting : orders_) {
             if (resting.side == side &&
                 (!best || (side == Side::Buy ? resting.price > *best : resting.price < *best))) {
                 best = resting.price;
@@ -158,19 +158,19 @@ private:
         return best;
     }
 
-    static bool crosses(const Order& order, Price restingPrice) {
+    static bool crosses(const Order &order, Price restingPrice) {
         if (order.type == OrderType::Market) {
             return true;
         }
         return order.side == Side::Buy ? order.price >= restingPrice : order.price <= restingPrice;
     }
 
-    Result enter(const Order& order) {
+    Result enter(const Order &order) {
         emit(EventType::Accepted, order, 0, order.price, order.quantity);
         Result result{Status::Accepted, RejectReason::None, 0, 0};
         if (order.type == OrderType::FillOrKill) {
             Quantity available = 0;
-            for (const Resting& resting : orders_) {
+            for (const Resting &resting : orders_) {
                 if (resting.side != order.side && crosses(order, resting.price)) {
                     available += resting.quantity;
                 }
@@ -206,7 +206,7 @@ private:
         return result;
     }
 
-    EventSink& sink_;
+    EventSink &sink_;
     Orders orders_;
     std::size_t nextSequence_ = 0;
 };

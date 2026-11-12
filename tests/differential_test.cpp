@@ -17,8 +17,8 @@
 namespace lob::test {
 namespace {
 
-std::size_t envOr(const char* name, std::size_t fallback) {
-    const char* value = std::getenv(name);
+std::size_t envOr(const char *name, std::size_t fallback) {
+    const char *value = std::getenv(name);
     return value != nullptr ? std::stoul(value) : fallback;
 }
 
@@ -27,9 +27,9 @@ struct Op {
     Order order;
 };
 
-std::string describe(const Op& op) {
+std::string describe(const Op &op) {
     std::ostringstream out;
-    const char* kinds[] = {"ADD", "CXL", "MOD"};
+    const char *kinds[] = {"ADD", "CXL", "MOD"};
     out << kinds[static_cast<int>(op.kind)] << " id=" << op.order.id
         << " side=" << (op.order.side == Side::Buy ? 'B' : 'S') << " px=" << op.order.price
         << " qty=" << op.order.quantity << " type=" << static_cast<int>(op.order.type);
@@ -48,7 +48,7 @@ public:
 
     explicit FlowGenerator(uint64_t seed) : rng_(seed) {}
 
-    Op next(const std::vector<OrderId>& resting) {
+    Op next(const std::vector<OrderId> &resting) {
         if (chance(0.05)) {
             mid_ += chance(0.5) ? 1 : -1;
         }
@@ -92,14 +92,14 @@ private:
         return side == Side::Buy ? mid_ - offset : mid_ + offset;
     }
 
-    OrderId pickId(const std::vector<OrderId>& resting) {
+    OrderId pickId(const std::vector<OrderId> &resting) {
         if (resting.empty() || chance(0.05)) {
             return std::uniform_int_distribution<OrderId>(1, nextId_ + 10)(rng_);
         }
         return resting[std::uniform_int_distribution<std::size_t>(0, resting.size() - 1)(rng_)];
     }
 
-    Op add(const std::vector<OrderId>& resting) {
+    Op add(const std::vector<OrderId> &resting) {
         const Side side = chance(0.5) ? Side::Buy : Side::Sell;
         const OrderId id = chance(0.02) ? pickId(resting) : nextId_++;
         OrderType type = OrderType::Limit;
@@ -119,15 +119,13 @@ private:
     OrderId nextId_ = 1;
 };
 
-template <class Book>
-struct Harness {
+template <class Book> struct Harness {
     RecordingSink sink;
     Book book;
 
-    template <class... Args>
-    explicit Harness(Args... args) : book(sink, args...) {}
+    template <class... Args> explicit Harness(Args... args) : book(sink, args...) {}
 
-    Result apply(const Op& op) {
+    Result apply(const Op &op) {
         sink.events.clear();
         switch (op.kind) {
         case Op::Kind::Add:
@@ -141,16 +139,15 @@ struct Harness {
     }
 };
 
-bool sameResult(const Result& a, const Result& b) {
+bool sameResult(const Result &a, const Result &b) {
     return a.status == b.status && a.reason == b.reason && a.fillCount == b.fillCount &&
            a.filledQuantity == b.filledQuantity;
 }
 
 template <class Book>
-::testing::AssertionResult matchesReference(Harness<Book>& subject, const Result& result,
-                                            Harness<NaiveBook>& reference,
-                                            const Result& expected) {
-    const char* name = Book::name;
+::testing::AssertionResult matchesReference(Harness<Book> &subject, const Result &result,
+                                            Harness<NaiveBook> &reference, const Result &expected) {
+    const char *name = Book::name;
     if (!sameResult(result, expected)) {
         return ::testing::AssertionFailure() << name << " result differs";
     }

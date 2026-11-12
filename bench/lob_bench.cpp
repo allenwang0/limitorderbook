@@ -49,13 +49,13 @@ struct Message {
 
 struct NullSink : EventSink {
     std::size_t fills = 0;
-    void onEvent(const Event& event) override { fills += event.type == EventType::Fill; }
+    void onEvent(const Event &event) override { fills += event.type == EventType::Fill; }
 };
 
 // Records orders filled away so generated cancels only target live orders.
 struct FilledIdSink : EventSink {
     std::unordered_set<OrderId> removed;
-    void onEvent(const Event& event) override {
+    void onEvent(const Event &event) override {
         if (event.type == EventType::Fill) {
             removed.insert(event.restingId);
         }
@@ -100,8 +100,7 @@ std::vector<Message> buildFlow(std::size_t count) {
                 live.push_back(message.order.id);
             }
         } else {
-            message = {Message::Kind::Market,
-                       {nextId++, side, 0, size(rng), OrderType::Market}};
+            message = {Message::Kind::Market, {nextId++, side, 0, size(rng), OrderType::Market}};
             shadow.addOrder(message.order);
         }
         if (!tracker.removed.empty()) {
@@ -115,13 +114,12 @@ std::vector<Message> buildFlow(std::size_t count) {
     return flow;
 }
 
-const std::vector<Message>& flow() {
+const std::vector<Message> &flow() {
     static const std::vector<Message> messages = buildFlow(kWarmupMessages + kMeasuredMessages);
     return messages;
 }
 
-template <class Book>
-Result apply(Book& book, const Message& message) {
+template <class Book> Result apply(Book &book, const Message &message) {
     if (message.kind == Message::Kind::Cancel) {
         return book.cancelOrder(message.order.id);
     }
@@ -129,10 +127,10 @@ Result apply(Book& book, const Message& message) {
 }
 
 enum Category { AddResting, AddCrossing, Cancel, Market, kCategories };
-constexpr std::array<const char*, kCategories> kCategoryNames = {"add_resting", "add_crossing",
-                                                                 "cancel", "market"};
+constexpr std::array<const char *, kCategories> kCategoryNames = {"add_resting", "add_crossing",
+                                                                  "cancel", "market"};
 
-double percentile(std::vector<int64_t>& samples, double q) {
+double percentile(std::vector<int64_t> &samples, double q) {
     const auto rank = static_cast<std::size_t>(q * static_cast<double>(samples.size() - 1));
     std::nth_element(samples.begin(), samples.begin() + static_cast<std::ptrdiff_t>(rank),
                      samples.end());
@@ -141,12 +139,11 @@ double percentile(std::vector<int64_t>& samples, double q) {
 
 // One steady_clock sample per message. Adds are classed as resting or
 // crossing after the fact, from whether they produced fills.
-template <class Book>
-void BM_Latency(benchmark::State& state) {
-    const auto& messages = flow();
+template <class Book> void BM_Latency(benchmark::State &state) {
+    const auto &messages = flow();
     std::array<std::vector<int64_t>, kCategories> samples;
     for (auto _ : state) {
-        for (auto& bucket : samples) {
+        for (auto &bucket : samples) {
             bucket.clear();
             bucket.reserve(kMeasuredMessages);
         }
@@ -156,7 +153,7 @@ void BM_Latency(benchmark::State& state) {
             apply(book, messages[i]);
         }
         for (std::size_t i = kWarmupMessages; i < messages.size(); ++i) {
-            const Message& message = messages[i];
+            const Message &message = messages[i];
             const auto start = Clock::now();
             Result result = apply(book, message);
             const auto stop = Clock::now();
@@ -172,7 +169,7 @@ void BM_Latency(benchmark::State& state) {
         }
     }
     for (std::size_t c = 0; c < kCategories; ++c) {
-        auto& bucket = samples[c];
+        auto &bucket = samples[c];
         if (bucket.empty()) {
             continue;
         }
@@ -187,9 +184,8 @@ void BM_Latency(benchmark::State& state) {
     }
 }
 
-template <class Book>
-void BM_Throughput(benchmark::State& state) {
-    const auto& messages = flow();
+template <class Book> void BM_Throughput(benchmark::State &state) {
+    const auto &messages = flow();
     for (auto _ : state) {
         state.PauseTiming();
         NullSink sink;
@@ -207,7 +203,7 @@ void BM_Throughput(benchmark::State& state) {
 
 // A p50 close to the clock's tick or to the cost of reading it is not a
 // real measurement, so report both.
-void BM_ClockOverhead(benchmark::State& state) {
+void BM_ClockOverhead(benchmark::State &state) {
     std::vector<int64_t> empty;
     empty.reserve(kMeasuredMessages);
     int64_t tick = INT64_MAX;
@@ -236,7 +232,7 @@ BENCHMARK_TEMPLATE(BM_Latency, FlatBook)->Iterations(1)->Unit(benchmark::kMillis
 BENCHMARK_TEMPLATE(BM_Throughput, MapBook)->Unit(benchmark::kMillisecond);
 BENCHMARK_TEMPLATE(BM_Throughput, FlatBook)->Unit(benchmark::kMillisecond);
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     benchmark::AddCustomContext("cpu", LOB_CPU);
     benchmark::AddCustomContext("compiler", __VERSION__);
     benchmark::AddCustomContext("cxx_flags", LOB_CXX_FLAGS);
