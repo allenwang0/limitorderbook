@@ -52,6 +52,16 @@ def check(page_path, shots, readme_images):
                 if readme_images and width == 1280 and scheme == "light":
                     pathlib.Path(readme_images).mkdir(parents=True, exist_ok=True)
                     page.locator("#latency").screenshot(path=f"{readme_images}/latency.png")
+                    sweep = page.evaluate(
+                        """() => JSON.parse(document.getElementById("report-data").textContent)
+                            .replay.findIndex((s) => s.events.filter((e) => e.type === "fill").length >= 2)"""
+                    )
+                    if sweep >= 0:
+                        page.eval_on_selector(
+                            "#scrubber",
+                            "(el, i) => { el.value = String(i); el.dispatchEvent(new Event('input')); }",
+                            sweep,
+                        )
                     page.locator("#replay").screenshot(path=f"{readme_images}/replay.png")
                 context.close()
         browser.close()

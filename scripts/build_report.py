@@ -368,7 +368,7 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; }
     if (clock && clock.tick_ns != null) {
       document.getElementById("clock-note").textContent =
         `Clock tick ${fmt(clock.tick_ns)} ns; empty timer p50 ${fmt(clock.overhead_p50_ns)} ns. ` +
-        "Values at or near one tick are at the clock's resolution.";
+        "Values at or near one tick are at the clock's resolution; 0 ns values (within one tick) are drawn at the axis start.";
     }
     const legend = document.getElementById("latency-legend");
     legend.innerHTML = "";
