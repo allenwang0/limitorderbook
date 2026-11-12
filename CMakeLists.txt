@@ -31,7 +31,7 @@ FetchContent_Declare(benchmark
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(googletest benchmark)
 
-add_library(lob STATIC src/MapBook.cpp)
+add_library(lob STATIC src/MapBook.cpp src/FlatBook.cpp)
 target_include_directories(lob PUBLIC include)
 target_link_libraries(lob PRIVATE lob_warnings)
 
