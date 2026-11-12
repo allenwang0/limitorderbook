@@ -54,6 +54,8 @@ target_link_libraries(lob_bench PRIVATE lob lob_warnings benchmark::benchmark)
 target_compile_definitions(lob_bench PRIVATE
   LOB_GIT_SHA="${LOB_GIT_SHA}" LOB_CPU="${LOB_CPU}" LOB_CXX_FLAGS="${LOB_CXX_FLAGS}")
 
+add_executable(lob_replay tools/lob_replay.cpp)
+target_link_libraries(lob_replay PRIVATE lob lob_warnings)
 
 enable_testing()
 include(GoogleTest)
@@ -64,3 +66,14 @@ gtest_discover_tests(lob_tests)
 add_executable(lob_differential_test tests/differential_test.cpp)
 target_link_libraries(lob_differential_test PRIVATE lob lob_warnings GTest::gtest_main)
 gtest_discover_tests(lob_differential_test PROPERTIES TIMEOUT 1800)
+
+add_test(NAME replay_matches_golden
+  COMMAND ${CMAKE_COMMAND} -DREPLAY=$<TARGET_FILE:lob_replay>
+    -DINPUT=${CMAKE_SOURCE_DIR}/tests/fixtures/replay_small.txt
+    -DEXPECTED=${CMAKE_SOURCE_DIR}/tests/fixtures/replay_small.jsonl
+    -P ${CMAKE_SOURCE_DIR}/tests/replay_golden.cmake)
+add_test(NAME replay_rejects_malformed_line
+  COMMAND lob_replay ${CMAKE_SOURCE_DIR}/tests/fixtures/replay_malformed.txt)
+set_tests_properties(replay_rejects_malformed_line PROPERTIES WILL_FAIL TRUE)
+add_test(NAME replay_demo_flow
+  COMMAND lob_replay ${CMAKE_SOURCE_DIR}/examples/demo_flow.txt)

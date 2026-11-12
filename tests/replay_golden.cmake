@@ -1,0 +1,8 @@
+execute_process(COMMAND ${REPLAY} ${INPUT} OUTPUT_VARIABLE actual RESULT_VARIABLE status)
+if(NOT status EQUAL 0)
+  message(FATAL_ERROR "lob_replay exited with ${status}")
+endif()
+file(READ ${EXPECTED} expected)
+if(NOT actual STREQUAL expected)
+  message(FATAL_ERROR "lob_replay output differs from ${EXPECTED}:\n${actual}")
+endif()
