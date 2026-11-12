@@ -57,6 +57,9 @@ target_compile_definitions(lob_bench PRIVATE
 add_executable(lob_replay tools/lob_replay.cpp)
 target_link_libraries(lob_replay PRIVATE lob lob_warnings)
 
+add_executable(lob_example_basic examples/basic.cpp)
+target_link_libraries(lob_example_basic PRIVATE lob lob_warnings)
+
 enable_testing()
 include(GoogleTest)
 add_executable(lob_tests tests/book_test.cpp)
@@ -77,3 +80,5 @@ add_test(NAME replay_rejects_malformed_line
 set_tests_properties(replay_rejects_malformed_line PROPERTIES WILL_FAIL TRUE)
 add_test(NAME replay_demo_flow
   COMMAND lob_replay ${CMAKE_SOURCE_DIR}/examples/demo_flow.txt)
+add_test(NAME example_basic COMMAND lob_example_basic)
+set_tests_properties(example_basic PROPERTIES PASS_REGULAR_EXPRESSION "ask 10060: 200 in 1 order")
