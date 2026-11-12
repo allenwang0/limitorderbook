@@ -12,9 +12,7 @@ using OrderId = uint64_t;
 
 enum class Side : uint8_t { Buy, Sell };
 
-constexpr Side opposite(Side side) {
-    return side == Side::Buy ? Side::Sell : Side::Buy;
-}
+constexpr Side opposite(Side side) { return side == Side::Buy ? Side::Sell : Side::Buy; }
 
 // Limit: match, then rest the remainder.
 // Market: match at any price, cancel the remainder. Price is ignored.
@@ -63,18 +61,18 @@ struct Event {
     Price price;
     Quantity quantity;
 
-    friend bool operator==(const Event &a, const Event &b) {
+    friend bool operator==(const Event& a, const Event& b) {
         return a.type == b.type && a.reason == b.reason && a.side == b.side &&
                a.orderId == b.orderId && a.restingId == b.restingId && a.price == b.price &&
                a.quantity == b.quantity;
     }
-    friend bool operator!=(const Event &a, const Event &b) { return !(a == b); }
+    friend bool operator!=(const Event& a, const Event& b) { return !(a == b); }
 };
 
 class EventSink {
 public:
     virtual ~EventSink() = default;
-    virtual void onEvent(const Event &event) = 0;
+    virtual void onEvent(const Event& event) = 0;
 };
 
 struct LevelInfo {
@@ -82,10 +80,10 @@ struct LevelInfo {
     Quantity quantity;
     std::size_t orderCount;
 
-    friend bool operator==(const LevelInfo &a, const LevelInfo &b) {
+    friend bool operator==(const LevelInfo& a, const LevelInfo& b) {
         return a.price == b.price && a.quantity == b.quantity && a.orderCount == b.orderCount;
     }
-    friend bool operator!=(const LevelInfo &a, const LevelInfo &b) { return !(a == b); }
+    friend bool operator!=(const LevelInfo& a, const LevelInfo& b) { return !(a == b); }
 };
 
 } // namespace lob

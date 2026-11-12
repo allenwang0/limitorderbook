@@ -10,7 +10,8 @@
 namespace lob::test {
 namespace {
 
-template <class Book> class BookTest : public ::testing::Test {
+template <class Book>
+class BookTest : public ::testing::Test {
 protected:
     RecordingSink sink;
     Book book{sink};
@@ -31,7 +32,10 @@ protected:
 };
 
 struct BookName {
-    template <class Book> static std::string GetName(int) { return Book::name; }
+    template <class Book>
+    static std::string GetName(int) {
+        return Book::name;
+    }
 };
 
 using Books = ::testing::Types<MapBook, FlatBook>;
