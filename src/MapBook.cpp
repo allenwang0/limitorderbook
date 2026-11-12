@@ -5,19 +5,19 @@
 
 namespace lob {
 
-MapBook::MapBook(EventSink& sink) : sink_(sink) {}
+MapBook::MapBook(EventSink &sink) : sink_(sink) {}
 
-void MapBook::emit(EventType type, RejectReason reason, const Order& order, OrderId restingId,
+void MapBook::emit(EventType type, RejectReason reason, const Order &order, OrderId restingId,
                    Price price, Quantity quantity) {
     sink_.onEvent({type, reason, order.side, order.id, restingId, price, quantity});
 }
 
-Result MapBook::reject(const Order& order, RejectReason reason) {
+Result MapBook::reject(const Order &order, RejectReason reason) {
     emit(EventType::Rejected, reason, order, 0, order.price, order.quantity);
     return {Status::Rejected, reason, 0, 0};
 }
 
-Result MapBook::addOrder(const Order& order) {
+Result MapBook::addOrder(const Order &order) {
     if (order.quantity == 0) {
         return reject(order, RejectReason::ZeroQuantity);
     }
@@ -28,7 +28,7 @@ Result MapBook::addOrder(const Order& order) {
         return reject(order, RejectReason::DuplicateId);
     }
     if (order.type == OrderType::PostOnly) {
-        const Levels& opposing = levels(opposite(order.side));
+        const Levels &opposing = levels(opposite(order.side));
         if (!opposing.empty() && crosses(order, opposing.begin()->first)) {
             return reject(order, RejectReason::WouldCross);
         }
@@ -36,7 +36,7 @@ Result MapBook::addOrder(const Order& order) {
     return enter(order);
 }
 
-Result MapBook::enter(const Order& order) {
+Result MapBook::enter(const Order &order) {
     emit(EventType::Accepted, RejectReason::None, order, 0, order.price, order.quantity);
     if (order.type == OrderType::FillOrKill && fillableQuantity(order) < order.quantity) {
         emit(EventType::Cancelled, RejectReason::None, order, 0, order.price, order.quantity);
@@ -55,16 +55,16 @@ Result MapBook::enter(const Order& order) {
     return result;
 }
 
-bool MapBook::crosses(const Order& order, Price restingPrice) const {
+bool MapBook::crosses(const Order &order, Price restingPrice) const {
     if (order.type == OrderType::Market) {
         return true;
     }
     return order.side == Side::Buy ? order.price >= restingPrice : order.price <= restingPrice;
 }
 
-Quantity MapBook::fillableQuantity(const Order& order) const {
+Quantity MapBook::fillableQuantity(const Order &order) const {
     Quantity available = 0;
-    for (const auto& [price, level] : levels(opposite(order.side))) {
+    for (const auto &[price, level] : levels(opposite(order.side))) {
         if (available >= order.quantity || !crosses(order, price)) {
             break;
         }
@@ -73,15 +73,15 @@ Quantity MapBook::fillableQuantity(const Order& order) const {
     return available;
 }
 
-void MapBook::rest(const Order& order) {
+void MapBook::rest(const Order &order) {
     const auto level = levels(order.side).try_emplace(order.price).first;
     level->second.orders.push_back({order.id, order.quantity});
     level->second.quantity += order.quantity;
     index_.emplace(order.id, Locator{order.side, level, std::prev(level->second.orders.end())});
 }
 
-void MapBook::remove(const Locator& locator) {
-    Level& level = locator.level->second;
+void MapBook::remove(const Locator &locator) {
+    Level &level = locator.level->second;
     level.quantity -= locator.order->quantity;
     level.orders.erase(locator.order);
     if (level.orders.empty()) {
@@ -126,9 +126,9 @@ Result MapBook::modifyOrder(OrderId id, Quantity newQuantity, Price newPrice) {
     return enter(modified);
 }
 
-Result MapBook::match(Order& order) {
+Result MapBook::match(Order &order) {
     Result result{Status::Accepted, RejectReason::None, 0, 0};
-    Levels& book = levels(opposite(order.side));
+    Levels &book = levels(opposite(order.side));
     while (order.quantity > 0 && !book.empty()) {
         auto levelIt = book.begin();
         const Price levelPrice = levelIt->first;
@@ -136,9 +136,9 @@ Result MapBook::match(Order& order) {
             break;
         }
 
-        Level& level = levelIt->second;
+        Level &level = levelIt->second;
         while (order.quantity > 0 && !level.orders.empty()) {
-            Resting& resting = level.orders.front();
+            Resting &resting = level.orders.front();
             const Quantity quantity = std::min(order.quantity, resting.quantity);
             // Trade at the resting order's price.
             emit(EventType::Fill, RejectReason::None, order, resting.id, levelPrice, quantity);
@@ -176,7 +176,7 @@ std::optional<Price> MapBook::spread() const {
 
 std::vector<LevelInfo> MapBook::depth(Side side, std::size_t levelCount) const {
     std::vector<LevelInfo> out;
-    for (const auto& [price, level] : levels(side)) {
+    for (const auto &[price, level] : levels(side)) {
         if (out.size() == levelCount) {
             break;
         }
@@ -186,7 +186,7 @@ std::vector<LevelInfo> MapBook::depth(Side side, std::size_t levelCount) const {
 }
 
 Quantity MapBook::volumeAtPrice(Side side, Price price) const {
-    const Levels& book = levels(side);
+    const Levels &book = levels(side);
     const auto it = book.find(price);
     return it == book.end() ? 0 : it->second.quantity;
 }
@@ -194,7 +194,7 @@ Quantity MapBook::volumeAtPrice(Side side, Price price) const {
 bool MapBook::checkInvariants() const {
     std::size_t orders = 0;
     for (const Side side : {Side::Buy, Side::Sell}) {
-        const Levels& book = levels(side);
+        const Levels &book = levels(side);
         for (auto level = book.begin(); level != book.end(); ++level) {
             Quantity sum = 0;
             if (level->second.orders.empty()) {
@@ -215,7 +215,8 @@ bool MapBook::checkInvariants() const {
             }
         }
     }
-    const bool crossed = !bids_.empty() && !asks_.empty() && bids_.begin()->first >= asks_.begin()->first;
+    const bool crossed =
+        !bids_.empty() && !asks_.empty() && bids_.begin()->first >= asks_.begin()->first;
     return orders == index_.size() && !crossed;
 }
 
