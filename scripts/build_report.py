@@ -114,7 +114,9 @@ def takeaway_latency(bench):
         return ""
     flat = latency["FlatBook"]["cancel"]["p99"]
     mapped = latency["MapBook"]["cancel"]["p99"]
-    return f"FlatBook cancel p99: {format_ns(flat)} vs MapBook {format_ns(mapped)}."
+    text = f"FlatBook cancel p99: {format_ns(flat)} vs MapBook {format_ns(mapped)}"
+    tick = bench["clock"].get("tick_ns")
+    return f"{text} (clock tick {format_ns(tick)})." if tick else f"{text}."
 
 
 def takeaway_throughput(bench):
@@ -141,10 +143,16 @@ def build_card(bench, book, command):
     context = bench["context"]
     rows = card_rows(bench, book)
     add, cancel, match = rows
-    takeaway = (
-        f"{book} median add {add['low']:.0f} ns, cancel p99 {cancel['high']:.0f} ns, "
-        f"match p99 {match['high']:.0f} ns on {context['cpu']}."
-    )
+    rate = bench["throughput"].get(book)
+    tick = bench["clock"].get("tick_ns")
+    takeaway = f"{book} p99: add {add['high']:.0f}, cancel {cancel['high']:.0f}, match {match['high']:.0f} ns"
+    if rate:
+        takeaway += f"; {rate / 1e6:.1f}M msgs/s ({1e9 / rate:.0f} ns mean)"
+    if tick:
+        takeaway += f"; {tick:.0f} ns clock tick"
+    takeaway += "."
+    # A log axis cannot show 0; sub-tick medians are reported as 0 ns.
+    scale = "log" if all(row["low"] > 0 for row in rows) else "linear"
     return {
         "schema_version": 1,
         "repo": "limitorderbook",
@@ -166,7 +174,7 @@ def build_card(bench, book, command):
             "type": "interval",
             "x_label": "Latency",
             "x_unit": "ns",
-            "x_scale": "log",
+            "x_scale": scale,
             "rows": rows,
         },
     }
@@ -205,8 +213,9 @@ def readme_table(bench):
         lines.append(
             f"The steady_clock tick on this machine is {clock['tick_ns']:.0f} ns and an empty "
             f"timer pair has a p50 of {clock['overhead_p50_ns']:.0f} ns, so any percentile at or "
-            "near one tick is at the clock's resolution, not a measured cost. Throughput gives the "
-            "mean cost per message without that limit."
+            "near one tick is at the clock's resolution, not a measured cost, and 0 means the "
+            "operation started and finished within one tick. Throughput gives the mean cost per "
+            "message without that limit."
         )
     return "\n".join(lines)
 
@@ -382,7 +391,8 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; }
       const s = (data.bench.latency[book] || {})[op.key];
       if (s) values.push(s.p50, s["p99.9"]);
     }
-    const lo = Math.pow(10, Math.floor(Math.log10(Math.max(1, Math.min(...values)))));
+    const positive = values.filter((v) => v > 0);
+    const lo = Math.pow(10, Math.floor(Math.log10(Math.max(1, Math.min(...positive)))));
     const hi = Math.pow(10, Math.ceil(Math.log10(Math.max(...values))));
     const width = chartWidth(target), left = width < 480 ? 96 : 112, right = 40, top = 8, rowH = 52, bottom = 40;
     const height = top + rowH * data.ops.length + bottom;
@@ -405,7 +415,8 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; }
         el("line", { x1: x(s.p50), x2: x(s["p99.9"]), y1: y, y2: y, stroke: color, "stroke-width": 1.5 }, row);
         for (const p of ["p50", "p99", "p99.9"]) {
           const m = marker(p, x(s[p]), y, color, row);
-          el("title", {}, m, `${book} ${op.label} ${p}: ${fmt(s[p])} ns (${fmt(s.count)} samples)`);
+          const shown = s[p] > 0 ? `${fmt(s[p])} ns` : "0 ns (within one clock tick, drawn at the axis start)";
+          el("title", {}, m, `${book} ${op.label} ${p}: ${shown} (${fmt(s.count)} samples)`);
         }
         el("text", { x: Math.min(x(s["p99.9"]) + 10, width - 32), y: y + 4, class: "muted" }, row, book === "MapBook" ? "Map" : "Flat");
       });
