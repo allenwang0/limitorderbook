@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-test:
     name: ${{ matrix.name }}
@@ -38,7 +41,7 @@ jobs:
         run: brew install ninja
       - name: Configure
         run: cmake --preset default -DLOB_WERROR=ON
-      - name: Build
+      - name: Build (lob, tests, bench, replay, examples/basic.cpp)
         run: cmake --build --preset default
       - name: Test
         run: ctest --preset default
@@ -54,3 +57,68 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ninja-build
       - name: Debug build with ASan and UBSan, 20 seeds x 100,000 ops
         run: cmake --workflow --preset asan
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: pip install -r requirements-dev.txt
+      - name: clang-format
+        run: clang-format --dry-run --Werror $(git ls-files '*.cpp' '*.h')
+      - name: Configure for compile_commands.json
+        run: cmake --preset default
+      - name: clang-tidy
+        run: clang-tidy -p build $(git ls-files 'src/*.cpp' 'tools/*.cpp')
+
+  report:
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-14
+      CXX: g++-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: pip install -r requirements-dev.txt
+      - run: playwright install --with-deps chromium
+      - name: Benchmark (short mode), replay, report, card and README table
+        run: scripts/run_bench.sh --benchmark_min_time=0.1s
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-json
+          path: results/bench.json
+      - name: Card matches the site schema
+        run: check-jsonschema --schemafile tests/fixtures/card.schema.json site/card.json
+      - name: Report and card unit tests
+        run: python -m unittest discover -s tests -p 'test_*.py'
+      - name: Playwright check of docs/index.html
+        run: python tests/report_check.py --shots screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-screenshots
+          path: screenshots/
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: docs
+
+  deploy-pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build-test, sanitizers, lint, report]
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
