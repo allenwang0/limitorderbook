@@ -1,0 +1,87 @@
+{
+  "context": {
+    "date": "2026-01-01T00:00:00+00:00",
+    "cpu": "Fixture CPU",
+    "compiler": "fixture compiler",
+    "cxx_flags": "-O3",
+    "git_sha": "0123456789abcdef0123456789abcdef01234567",
+    "message_mix": "55% add, 40% cancel, 5% market",
+    "seed": "1",
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "BM_ClockOverhead/iterations:1",
+      "run_type": "iteration",
+      "clock_tick_ns": 41.0,
+      "timer_overhead_p50_ns": 0.0
+    },
+    {
+      "name": "BM_Latency<MapBook>/iterations:1",
+      "run_type": "iteration",
+      "add_resting_count": 1000,
+      "add_resting_p50_ns": 50,
+      "add_resting_p90_ns": 100,
+      "add_resting_p99_ns": 250,
+      "add_resting_p99.9_ns": 1000,
+      "add_resting_max_ns": 5000,
+      "add_crossing_count": 1001,
+      "add_crossing_p50_ns": 60,
+      "add_crossing_p90_ns": 120,
+      "add_crossing_p99_ns": 300,
+      "add_crossing_p99.9_ns": 1200,
+      "add_crossing_max_ns": 6000,
+      "cancel_count": 1002,
+      "cancel_p50_ns": 70,
+      "cancel_p90_ns": 140,
+      "cancel_p99_ns": 350,
+      "cancel_p99.9_ns": 1400,
+      "cancel_max_ns": 7000,
+      "market_count": 1003,
+      "market_p50_ns": 80,
+      "market_p90_ns": 160,
+      "market_p99_ns": 400,
+      "market_p99.9_ns": 1600,
+      "market_max_ns": 8000
+    },
+    {
+      "name": "BM_Latency<FlatBook>/iterations:1",
+      "run_type": "iteration",
+      "add_resting_count": 1000,
+      "add_resting_p50_ns": 40,
+      "add_resting_p90_ns": 80,
+      "add_resting_p99_ns": 200,
+      "add_resting_p99.9_ns": 800,
+      "add_resting_max_ns": 4000,
+      "add_crossing_count": 1001,
+      "add_crossing_p50_ns": 50,
+      "add_crossing_p90_ns": 100,
+      "add_crossing_p99_ns": 250,
+      "add_crossing_p99.9_ns": 1000,
+      "add_crossing_max_ns": 5000,
+      "cancel_count": 1002,
+      "cancel_p50_ns": 60,
+      "cancel_p90_ns": 120,
+      "cancel_p99_ns": 300,
+      "cancel_p99.9_ns": 1200,
+      "cancel_max_ns": 6000,
+      "market_count": 1003,
+      "market_p50_ns": 70,
+      "market_p90_ns": 140,
+      "market_p99_ns": 350,
+      "market_p99.9_ns": 1400,
+      "market_max_ns": 7000
+    },
+    {
+      "name": "BM_Throughput<MapBook>",
+      "run_type": "iteration",
+      "items_per_second": 10000000.0
+    },
+    {
+      "name": "BM_Throughput<FlatBook>",
+      "run_type": "iteration",
+      "items_per_second": 20000000.0
+    }
+  ],
+  "_comment": "Synthetic fixture for tests, not a benchmark result."
+}
