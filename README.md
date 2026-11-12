@@ -127,7 +127,7 @@ best bid: 10055
 
 ## Results
 
-`lob_bench` builds one seeded message stream: 55% add, 40% cancel and 5% market. Add prices sit a geometric number of ticks from the touch (mean 3 ticks) and 10% of adds are priced through it. Each book first processes 100,000 warm-up messages untimed, then each of the next 1,000,000 is timed on its own with `steady_clock`. Adds are counted as resting or crossing depending on whether they produced fills.
+`lob_bench` builds one seeded message stream: 55% add, 40% cancel and 5% market. 90% of adds rest 1 + Geometric(0.25) ticks behind the opposite best price, 4 ticks on average; the other 10% are priced at or through it. Each book first processes 100,000 warm-up messages untimed, then each of the next 1,000,000 is timed on its own with `steady_clock`. Adds are counted as resting or crossing depending on whether they produced fills.
 
 <!-- results:start -->
 Measured on Apple M5 Pro with Apple LLVM 21.0.0 (clang-2100.4.1.1), flags `-O3 -DNDEBUG -std=c++17`, commit `346f4def2791`, 2026-11-11. Seeded synthetic flow (55% add, 40% cancel, 5% market, seed 20240611), 1,000,000 timed messages after 100,000 warm-up messages.
