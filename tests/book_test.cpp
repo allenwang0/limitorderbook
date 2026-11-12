@@ -1,4 +1,5 @@
 #include "RecordingSink.h"
+#include "lob/FlatBook.h"
 #include "lob/MapBook.h"
 
 #include <gtest/gtest.h>
@@ -37,7 +38,7 @@ struct BookName {
     }
 };
 
-using Books = ::testing::Types<MapBook>;
+using Books = ::testing::Types<MapBook, FlatBook>;
 TYPED_TEST_SUITE(BookTest, Books, BookName);
 
 TYPED_TEST(BookTest, CrossingBuyTradesAtRestingAskPrice) {

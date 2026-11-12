@@ -1,5 +1,6 @@
 #include "NaiveBook.h"
 #include "RecordingSink.h"
+#include "lob/FlatBook.h"
 #include "lob/MapBook.h"
 
 #include <gtest/gtest.h>
@@ -121,7 +122,10 @@ private:
 template <class Book>
 struct Harness {
     RecordingSink sink;
-    Book book{sink};
+    Book book;
+
+    template <class... Args>
+    explicit Harness(Args... args) : book(sink, args...) {}
 
     Result apply(const Op& op) {
         sink.events.clear();
@@ -183,12 +187,22 @@ TEST(Differential, BooksAgreeWithNaiveReference) {
         FlowGenerator flow(seed);
         Harness<NaiveBook> reference;
         Harness<MapBook> map;
+        Harness<FlatBook> flat;
+        // A 16-tick window puts most orders in the std::map fallback and
+        // moves the best price across the window edge constantly.
+        Harness<FlatBook> narrowFlat(Price{9'992}, std::size_t{16});
         for (std::size_t i = 0; i < opsPerSeed; ++i) {
             const Op op = flow.next(reference.book.restingIds());
             const Result expected = reference.apply(op);
             const Result mapResult = map.apply(op);
+            const Result flatResult = flat.apply(op);
+            const Result narrowResult = narrowFlat.apply(op);
             ASSERT_TRUE(matchesReference(map, mapResult, reference, expected))
                 << "seed " << seed << " op " << i << ": " << describe(op);
+            ASSERT_TRUE(matchesReference(flat, flatResult, reference, expected))
+                << "seed " << seed << " op " << i << ": " << describe(op);
+            ASSERT_TRUE(matchesReference(narrowFlat, narrowResult, reference, expected))
+                << "narrow window, seed " << seed << " op " << i << ": " << describe(op);
             ++opsChecked;
         }
     }
