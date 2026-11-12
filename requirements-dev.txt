@@ -1,0 +1,7 @@
+# Tools for the report, card checks and linting. Install into .venv:
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+check-jsonschema==0.39.0
+clang-format==23.1.5
+clang-tidy==23.1.4
+jsonschema==4.26.0
+playwright==1.65.0
