@@ -14,11 +14,11 @@ namespace lob {
 // Price levels in a std::map, orders at each level in a std::list (FIFO).
 class MapBook {
 public:
-    static constexpr const char *name = "MapBook";
+    static constexpr const char* name = "MapBook";
 
-    explicit MapBook(EventSink &sink);
+    explicit MapBook(EventSink& sink);
 
-    Result addOrder(const Order &order);
+    Result addOrder(const Order& order);
     Result cancelOrder(OrderId id);
     // Same price and a smaller or equal quantity keeps queue position. Any
     // other change cancels the order and re-adds it as a Limit order at the
@@ -58,20 +58,20 @@ private:
         std::list<Resting>::iterator order;
     };
 
-    Levels &levels(Side side) { return side == Side::Buy ? bids_ : asks_; }
-    const Levels &levels(Side side) const { return side == Side::Buy ? bids_ : asks_; }
+    Levels& levels(Side side) { return side == Side::Buy ? bids_ : asks_; }
+    const Levels& levels(Side side) const { return side == Side::Buy ? bids_ : asks_; }
 
-    Result reject(const Order &order, RejectReason reason);
-    Result enter(const Order &order);
-    bool crosses(const Order &order, Price restingPrice) const;
-    Quantity fillableQuantity(const Order &order) const;
-    Result match(Order &order);
-    void rest(const Order &order);
-    void remove(const Locator &locator);
-    void emit(EventType type, RejectReason reason, const Order &order, OrderId restingId,
+    Result reject(const Order& order, RejectReason reason);
+    Result enter(const Order& order);
+    bool crosses(const Order& order, Price restingPrice) const;
+    Quantity fillableQuantity(const Order& order) const;
+    Result match(Order& order);
+    void rest(const Order& order);
+    void remove(const Locator& locator);
+    void emit(EventType type, RejectReason reason, const Order& order, OrderId restingId,
               Price price, Quantity quantity);
 
-    EventSink &sink_;
+    EventSink& sink_;
     Levels bids_{BestFirst{true}};
     Levels asks_{BestFirst{false}};
     std::unordered_map<OrderId, Locator> index_;
