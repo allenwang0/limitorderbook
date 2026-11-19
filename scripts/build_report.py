@@ -182,41 +182,19 @@ def build_card(bench, book, command):
 
 def readme_table(bench):
     context = bench["context"]
-    clock = bench["clock"]
     lines = [
-        f"Measured on {context['cpu']} with {context['compiler']}, flags `{context['cxx_flags']}`, "
-        f"commit `{context['git_sha'][:12]}`, {context['date'][:10]}. "
-        f"Seeded synthetic flow ({context['message_mix']}, seed {context['seed']}), "
-        "1,000,000 timed messages after 100,000 warm-up messages.",
-        "",
-        "| Book | Operation | Samples | p50 | p90 | p99 | p99.9 | max |",
-        "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Book | Messages/s |",
+        "| :--- | ---: |",
     ]
-    for book in BOOKS:
-        for op, label in OPS:
-            stats = bench["latency"].get(book, {}).get(op)
-            if not stats:
-                continue
-            cells = " | ".join(f"{stats[p]:,.0f}" for p in PERCENTILES)
-            lines.append(f"| {book} | {label} | {stats['count']:,} | {cells} |")
-    lines.append("")
-    lines.append("Latencies in ns. Throughput on the same flow, without per-message timing:")
-    lines.append("")
-    lines.append("| Book | Messages/s |")
-    lines.append("| :--- | ---: |")
     for book in BOOKS:
         rate = bench["throughput"].get(book)
         if rate:
             lines.append(f"| {book} | {rate / 1e6:.2f}M |")
-    if clock.get("tick_ns") is not None:
-        lines.append("")
-        lines.append(
-            f"The steady_clock tick on this machine is {clock['tick_ns']:.0f} ns and an empty "
-            f"timer pair has a p50 of {clock['overhead_p50_ns']:.0f} ns, so any percentile at or "
-            "near one tick is at the clock's resolution, not a measured cost, and 0 means the "
-            "operation started and finished within one tick. Throughput gives the mean cost per "
-            "message without that limit."
-        )
+    lines.append("")
+    lines.append(
+        f"Single thread on {context['cpu']}, seeded synthetic flow ({context['message_mix']}). "
+        "Per-operation latency percentiles are in the [report](docs/index.html)."
+    )
     return "\n".join(lines)
 
 
