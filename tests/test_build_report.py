@@ -53,6 +53,13 @@ class BuildReportTest(unittest.TestCase):
         self.assertIn("synthetic", card["data_note"].lower())
         self.assertLessEqual(len(card["takeaway"]), 140)
 
+    def test_sections_have_stable_anchors(self):
+        # Shared links like docs/#latency must keep working when the report is rebuilt.
+        _, out = self.run_script("--bench", "missing.json", "--replay", "missing.jsonl")
+        page = out.read_text()
+        for anchor in ("latency", "throughput", "replay"):
+            self.assertIn(f'<h2 id="{anchor}">', page)
+
     def test_missing_inputs_show_empty_state(self):
         _, out = self.run_script("--bench", "missing.json", "--replay", "missing.jsonl")
         page = out.read_text()

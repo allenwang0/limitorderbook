@@ -32,6 +32,11 @@ README_START = "<!-- results:start -->"
 README_END = "<!-- results:end -->"
 
 
+def label_compiler(version):
+    """GCC's __VERSION__ is a bare number such as "14.2.0"; Clang's names itself."""
+    return f"GCC {version}" if re.match(r"\d", version) else version
+
+
 def load_bench(path):
     """Return (bench dict, error string). bench holds context, latency and throughput."""
     if not path or not os.path.exists(path):
@@ -69,7 +74,7 @@ def load_bench(path):
     return {
         "context": {
             "cpu": context.get("cpu", "unknown"),
-            "compiler": context.get("compiler", "unknown"),
+            "compiler": label_compiler(context.get("compiler", "unknown")),
             "cxx_flags": context.get("cxx_flags", "unknown"),
             "git_sha": context.get("git_sha", "unknown"),
             "date": context.get("date", "unknown"),
@@ -125,8 +130,8 @@ def takeaway_throughput(bench):
         return ""
     ratio = rates["FlatBook"] / rates["MapBook"]
     return (
-        f"FlatBook processes {rates['FlatBook'] / 1e6:.1f}M msgs/s, "
-        f"{ratio:.2f}x MapBook's {rates['MapBook'] / 1e6:.1f}M on the same flow."
+        f"FlatBook processes {rates['FlatBook'] / 1e6:.2f}M msgs/s, "
+        f"{ratio:.2f}x MapBook's {rates['MapBook'] / 1e6:.2f}M on the same flow."
     )
 
 
@@ -238,22 +243,33 @@ TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Order Book Report</title>
+<title>Limit order book benchmark · Allen Wang</title>
+<script>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
 <style>
 :root {
-  --bg: #ffffff; --fg: #1d2330; --muted: #5b6475; --grid: #e3e6ec; --panel: #f6f7f9;
-  --a: #2b6cb0; --b: #c05621; --bid: #2b6cb0; --ask: #c05621; --outline: #1d2330;
+  --bg: #fbfbf9; --fg: #111111; --muted: #5f5f63; --grid: #e3e3e0; --panel: #f1f1ee;
+  --a: #2b6cb0; --b: #c05621; --bid: #2b6cb0; --ask: #c05621; --outline: #111111;
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #12151b; --fg: #e6e9ef; --muted: #9aa3b2; --grid: #2a2f3a; --panel: #1a1e26;
-    --a: #63a4e8; --b: #f0965a; --bid: #63a4e8; --ask: #f0965a; --outline: #e6e9ef;
+  :root:not([data-theme="light"]) {
+    --bg: #0b0b0b; --fg: #f2f2ef; --muted: #a1a1a6; --grid: #2a2a2a; --panel: #161616;
+    --a: #63a4e8; --b: #f0965a; --bid: #63a4e8; --ask: #f0965a; --outline: #f2f2ef;
+    color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #0b0b0b; --fg: #f2f2ef; --muted: #a1a1a6; --grid: #2a2a2a; --panel: #161616;
+  --a: #63a4e8; --b: #f0965a; --bid: #63a4e8; --ask: #f0965a; --outline: #f2f2ef;
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg);
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+main { max-width: 960px; margin: 0 auto; padding: 0 16px 48px; }
+.site-nav { display: flex; justify-content: space-between; gap: 16px; padding: 16px 0; font-size: 14px; }
+.site-nav a { color: var(--muted); text-decoration: none; }
+.site-nav a:hover { color: var(--fg); }
 h1 { font-size: 1.5rem; margin: 0 0 4px; }
 h2 { font-size: 1.15rem; margin: 32px 0 4px; }
 p { margin: 4px 0; }
@@ -277,12 +293,13 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; }
 </head>
 <body>
 <main>
+<nav class="site-nav" aria-label="Site"><a href="https://allenwang0.github.io/">← Allen Wang</a><a href="https://github.com/allenwang0/limitorderbook">Source</a></nav>
 <h1>Limit order book benchmark</h1>
 <p class="meta">{{META}}</p>
-<p class="note">All order flow on this page is seeded and synthetic, not market data.</p>
+<p class="note">Synthetic data: all order flow on this page is seeded, not market data.</p>
 
 <section id="latency">
-<h2>Latency per operation</h2>
+<h2 id="latency">Latency per operation</h2>
 <p class="takeaway" id="latency-takeaway"></p>
 <div class="legend" id="latency-legend"></div>
 <div id="latency-chart"></div>
@@ -290,19 +307,21 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; }
 </section>
 
 <section id="throughput">
-<h2>Throughput</h2>
+<h2 id="throughput">Throughput</h2>
 <p class="takeaway" id="throughput-takeaway"></p>
 <div id="throughput-chart"></div>
 </section>
 
 <section id="replay">
-<h2>Book replay</h2>
-<p class="note">examples/demo_flow.txt through MapBook. Bids on the left, asks on the right, one row per price in ticks. Rows that traded in the current step are outlined. Use the arrow keys to step.</p>
+<h2 id="replay">Book replay</h2>
+<p class="note">examples/demo_flow.txt through MapBook. Bids on the left, asks on the right, one row per price in ticks. Rows that traded in the current step are outlined.</p>
+<p class="note">Commands: <code>ADD id side price qty [type]</code> with side B (buy) or S (sell), price in ticks; <code>CXL id</code> cancels; <code>MOD id qty price</code> changes an order. Types: default LIMIT rests any remainder, IOC fills what it can up to the price and cancels the rest, FOK fills in full or not at all, POST rests only if it would not cross, MARKET ignores price.</p>
 <div class="controls" id="replay-controls">
   <button type="button" id="prev" aria-label="Previous step">Prev</button>
   <input type="range" id="scrubber" min="0" value="0" aria-label="Replay step">
   <button type="button" id="next" aria-label="Next step">Next</button>
   <span id="step-count" class="note"></span>
+  <span class="note" aria-hidden="true">← → keys step</span>
 </div>
 <p id="step-text"></p>
 <div id="ladder"></div>
@@ -463,7 +482,7 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; }
       el("text", { x: mid - labelW / 2 - 8, y: 14, "text-anchor": "end" }, svg, "Bids (qty)");
       el("text", { x: mid + labelW / 2 + 8, y: 14 }, svg, "Asks (qty)");
       el("text", { x: mid, y: 14, "text-anchor": "middle", class: "muted" }, svg, "price");
-      if (!sorted.length) el("text", { x: mid, y: top + 14, "text-anchor": "middle", class: "muted" }, svg, "Book is empty");
+      if (!sorted.length) el("text", { x: 0, y: top + 14, class: "muted" }, svg, "Book is empty");
       sorted.forEach((price, i) => {
         const y = top + i * rowH;
         const g = el("g", { class: "level", "data-price": String(price) }, svg);
@@ -483,7 +502,7 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; }
           el("rect", { x: 2, y: y + 1, width: width - 4, height: rowH - 2, fill: "none", stroke: "var(--outline)", "stroke-width": 1.5, "stroke-dasharray": "4 3", class: "traded" }, g);
         }
       });
-      el("text", { x: mid, y: height - 8, "text-anchor": "middle", class: "muted" }, svg, "quantity (order count) per price level, price in ticks");
+      el("text", { x: 0, y: height - 8, class: "muted" }, svg, "quantity (order count) per price level, price in ticks");
       target.replaceChildren(svg);
     }
 
