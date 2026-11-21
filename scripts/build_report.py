@@ -299,7 +299,7 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; }
 <p class="note">Synthetic data: all order flow on this page is seeded, not market data.</p>
 
 <section id="latency">
-<h2>Latency per operation</h2>
+<h2 id="latency">Latency per operation</h2>
 <p class="takeaway" id="latency-takeaway"></p>
 <div class="legend" id="latency-legend"></div>
 <div id="latency-chart"></div>
@@ -307,13 +307,13 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; }
 </section>
 
 <section id="throughput">
-<h2>Throughput</h2>
+<h2 id="throughput">Throughput</h2>
 <p class="takeaway" id="throughput-takeaway"></p>
 <div id="throughput-chart"></div>
 </section>
 
 <section id="replay">
-<h2>Book replay</h2>
+<h2 id="replay">Book replay</h2>
 <p class="note">examples/demo_flow.txt through MapBook. Bids on the left, asks on the right, one row per price in ticks. Rows that traded in the current step are outlined.</p>
 <p class="note">Commands: <code>ADD id side price qty [type]</code> with side B (buy) or S (sell), price in ticks; <code>CXL id</code> cancels; <code>MOD id qty price</code> changes an order. Types: default LIMIT rests any remainder, IOC fills what it can up to the price and cancels the rest, FOK fills in full or not at all, POST rests only if it would not cross, MARKET ignores price.</p>
 <div class="controls" id="replay-controls">
