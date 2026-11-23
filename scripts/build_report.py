@@ -644,7 +644,7 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
         main = rk.join([rk.section("throughput", "No benchmark results yet", rk.tag("p", bench_error)),
                         rk.section("latency", "Latency", rk.tag("p", bench_error)),
                         rk.section("replay", "Replay", rk.tag("p", replay_error or ""))])
-        return rk.page(title="Limit order book · Allen Wang", description="Limit order book benchmark report.",
+        return rk.page(title="limitorderbook · Allen Wang", description="Limit order book benchmark report.",
                        canonical=PAGE_URL, header=rk.report_header(HOME_URL, "← Allen Wang", [("Source", REPO_URL)]),
                        main=main, footer=rk.footer("No benchmark run recorded."))
     ctx = bench["context"]
@@ -661,7 +661,7 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
 
     hero = rk.hero(
         eyebrow="Systems · C++17 · Benchmark",
-        title="Limit order book",
+        title="limitorderbook",
         subtitle=Raw("A price-time-priority matching engine, built twice — a <code>std::map</code> version and a "
                      "flat-array version — so their speed can be compared directly."),
         value=ratio_text(d["ratio"]),
@@ -913,7 +913,7 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
             f"code {esc(src_sha[:7])} · run {esc(ctx['date'][:10])} on {esc(ctx['cpu'])}"),
         Raw(f'<a href="{HOME_URL}">Allen Wang</a> · <a href="{REPO_URL}">Source</a>'))
     return rk.page(
-        title="Limit order book · Allen Wang",
+        title="limitorderbook · Allen Wang",
         description=(f"FlatBook, a flat-array C++17 limit order book, processes {ratio_text(d['ratio'])} the messages "
                      f"per second of a std::map version ({runs}, one core, {ctx['cpu']})."),
         canonical=PAGE_URL,
