@@ -886,7 +886,7 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
     steps_html = rk.reproduce([
         ("Build in Release and run all tests (CMake 3.25+, Ninja, a C++17 compiler; downloads GoogleTest and "
          "Google Benchmark). Expect “100% tests passed”.", "cmake --workflow --preset default"),
-        (Raw(f"Run the benchmark ({d['reps']} repetitions, about {rk.num(f"{bench['timed_seconds']:.0f}", "s")} of timed work "
+        (Raw(f"Run the benchmark ({d['reps']} repetitions, about {rk.num(format(bench['timed_seconds'], '.0f'), 's')} of timed work "
              f"here), the replay, and rebuild this page, the card and the README table from the results."),
          "scripts/run_bench.sh"),
         (Raw(f"Check the differential test line: “differential: {facts['diff_seeds']} seeds x {facts['diff_ops']} ops = "
