@@ -167,7 +167,7 @@ svg[role=img] { max-width: 100%; height: auto; }
 @media (max-width: 734px) { .v-t { display: none; } .v-p { display: block; } }
 .figure figcaption { font-size: var(--fs-small); line-height: 1.45; color: var(--text-2); margin-top: var(--space-5); max-width: var(--measure); }
 .figure figcaption p { margin: 0 0 var(--space-2); }
-details.data { margin-top: var(--space-4); font-size: var(--fs-small); }
+details.data { margin-top: var(--space-1); font-size: var(--fs-small); }
 details.data summary { cursor: pointer; color: var(--accent); font-weight: 600; min-height: 44px; display: inline-flex; align-items: center; }
 details.data summary::marker { color: var(--text-3); }
 

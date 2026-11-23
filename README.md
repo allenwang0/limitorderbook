@@ -2,7 +2,7 @@
 
 A limit order book matching engine in C++17, built twice: `MapBook` on `std::map`, and `FlatBook` on flat arrays, so their speed can be compared on the same order flow.
 
-**[Read the report →](https://allenwang0.github.io/limitorderbook/)** results, method, limits and every number's source.
+**[Read the report →](https://allenwang0.github.io/limitorderbook/)**
 
 ![FlatBook and MapBook throughput, median of 10 runs with min–max whiskers](docs/img/throughput.png)
 
@@ -17,7 +17,7 @@ A limit order book matching engine in C++17, built twice: `MapBook` on `std::map
 FlatBook: **1.86×** MapBook's throughput. Median of 10 runs, one thread on Apple M5 Pro, seeded synthetic flow (55% add, 40% cancel, 5% market).
 <!-- results:end -->
 
-- **Checked op by op** against a simple reference book: 20 seeds of 100,000 random operations, also under AddressSanitizer and UndefinedBehaviorSanitizer.
+- **Checked op by op** against a simple reference book on 2,000,000 random operations, also under ASan and UBSan.
 - **Limit, market, IOC, fill-or-kill and post-only orders**; cancel is designed for average O(1).
 
 ## Run it
@@ -39,11 +39,11 @@ Needs CMake 3.25+, Ninja and a C++17 compiler.
 - `MapBook` keeps price levels in a `std::map` and each level's orders in a linked list.
 - `FlatBook` keeps orders in a pooled array linked by index, and price levels for a fixed 4,096-tick window in a vector indexed by tick; prices outside it fall back to a `std::map`.
 - Reducing an order's size keeps its place in the queue; raising it or changing its price sends it to the back.
-- `lob_replay` turns a file of order commands into JSON fills and book depth.
+- `lob_replay` turns order commands into JSON fills and book depth.
 
 ## Limitations
 
 - One instrument, one thread, no networking or market data feed.
 - The benchmark flow is synthetic, and the window is centred on its prices.
-- Single operations are faster than the clock's tick, so per-message latencies are coarse; throughput is the measure that separates the books.
+- Single operations are faster than the clock's tick, so throughput, not per-message latency, separates the books.
 - Heap allocations are not measured.

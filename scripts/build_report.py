@@ -449,7 +449,7 @@ def storage_svg(uid, width, facts):
 
     def flat_panel(ox, oy):
         p = [T(ox, oy + 16, "FlatBook", "c-value c-hi"),
-             T(ox, oy + 34, "flat level window + pooled order nodes", "c-tick")]
+             T(ox, oy + 34, "level window + pooled nodes", "c-tick")]
         cells = 12
         cw = pw / cells
         p.append(T(ox, oy + 62, f"Level window: {facts['window']:,} ticks", "c-tick"))
@@ -473,7 +473,8 @@ def storage_svg(uid, width, facts):
             bx = ox + i * (half + 8)
             p.append(f'<rect class="c-node-sunk" x="{f(bx)}" y="{oy + 214}" width="{f(half)}" height="44" rx="10"/>')
             p.append(T(bx + 10, oy + 232, l1, "c-tick"))
-            p.append(T(bx + 10, oy + 249, l2 if half > 200 else l2.split(",")[0], "c-tick"))
+            short = {"prices outside window": "outside window", "open addressing, Fibonacci hash": "open addressing"}
+            p.append(T(bx + 10, oy + 249, l2 if half > 200 else short[l2], "c-tick"))
         return p
 
     parts = map_panel(0, 0)
@@ -494,17 +495,17 @@ def mini_storage_svg(uid):
     """Bento card schematic: pointer hops vs one array index."""
     T, f = rk.svg_text, rk.coord
     p = [T(0, 22, "MapBook", "c-label")]
-    pts = [(96, 16), (140, 40), (184, 16), (228, 40)]
+    pts = [(84, 16), (118, 40), (152, 16), (186, 40)]
     p.append('<path class="c-line" d="' + "".join(("M" if i == 0 else "L") + f"{x} {y}" for i, (x, y) in enumerate(pts)) + '"/>')
     for x, y in pts:
         p.append(f'<circle class="c-node" cx="{x}" cy="{y}" r="9"/>')
-    p.append(T(250, 34, "tree walk", "c-tick"))
+    p.append(T(206, 34, "tree walk", "c-tick"))
     p.append(T(0, 86, "FlatBook", "c-label c-hi"))
-    for i in range(10):
-        p.append(f'<rect class="{"c-accent" if i == 4 else "c-node"}" x="{86 + i * 16}" y="72" width="14" height="22" rx="3"/>')
-    p.append(T(250, 88, "one index", "c-tick"))
-    return rk.svg(uid, 330, 104, "Price lookup: tree walk versus one array index",
-                   "MapBook follows pointers down a tree; FlatBook indexes one array slot.", "".join(p))
+    for i in range(9):
+        p.append(f'<rect class="{"c-accent" if i == 4 else "c-node"}" x="{76 + i * 13}" y="72" width="11" height="22" rx="3"/>')
+    p.append(T(206, 88, "one index", "c-tick"))
+    return rk.svg(uid, 270, 104, "Price lookup: tree walk versus one array index",
+                  "MapBook follows pointers down a tree; FlatBook indexes one array slot.", "".join(p))
 
 
 # ---------------------------------------------------------------- primer example
@@ -674,7 +675,7 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
     findings = rk.bento([
         (8, 2, rk.join([
             rk.tag("h3", "Orders live in one array, linked by index", class_="card-heading"),
-            Raw(f'<div style="max-width:400px;margin:4px 0 16px">{mini_storage_svg("mini")}</div>'),
+            Raw(f'<div style="max-width:340px;margin:4px 0 16px">{mini_storage_svg("mini")}</div>'),
             rk.tag("p", Raw(f"MapBook finds a price level by walking a tree; FlatBook indexes one slot of a "
                             f"{facts['window']:,}-entry array and links orders by 32-bit index.{R('E8')} "
                             f'<a href="#storage">Storage layout</a>')),
@@ -779,25 +780,24 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
     # Storage
     store_fig = rk.figure(
         "fig-storage", "MapBook chases pointers; FlatBook indexes arrays",
-        rk.variants(storage_svg("st-d", 1000, facts), storage_svg("st-t", 640, facts), storage_svg("st-p", 300, facts)),
+        rk.variants(storage_svg("st-d", 1000, facts), storage_svg("st-t", 640, facts), storage_svg("st-p", 260, facts)),
         rk.tag("p", Raw(f"Schematic, not to scale. Filled cells are occupied price levels; arcs are 32-bit "
                         f"<code>prev</code>/<code>next</code> links.{R('E8')}")),
         question="Where does each book keep price levels and orders?",
     )
-    decisions = rk.table(
-        "Design decisions in FlatBook",
-        ["Choice", "Alternative", "Consequence"],
-        [
-            [f"Level array for {facts['window']:,} ticks", "std::map of levels (MapBook)",
-             "One index per lookup inside the window; a fixed range chosen up front"],
-            ["Order nodes in one vector, uint32 links", "std::list node per order",
-             "Nodes reused through a free list; links are half the size of pointers"],
-            ["Open-addressing id index, Fibonacci hash", "std::unordered_map",
-             "Sequential ids spread across slots; table doubles at load factor 0.5"],
-            ["std::map for prices outside the window", "Reject or re-centre", "Correct everywhere; slower outside"],
-        ], wrap_cols={1, 2})
+    decisions = rk.methodology([
+        (f"Level array for {facts['window']:,} ticks",
+         "Instead of a std::map of levels: one index per lookup inside the window, at the cost of a range fixed up front."),
+        ("Order nodes in one vector, uint32 links",
+         "Instead of a std::list node per order: nodes are reused through a free list, and links are half the size of "
+         "pointers."),
+        ("Open-addressing id index, Fibonacci hash",
+         "Instead of std::unordered_map: sequential ids spread across slots; the table doubles at load factor 0.5."),
+        ("std::map for prices outside the window",
+         "Instead of rejecting or re-centring: correct at every price, slower outside the window."),
+    ])
     store_sec = rk.section("storage", "Orders live in one pooled array, linked by index",
-                           rk.join([store_fig, Raw('<div style="margin-top:32px">'), decisions, Raw("</div>")]),
+                           rk.join([store_fig, Raw('<h3 class="sub">Design decisions in FlatBook</h3>'), decisions]),
                            eyebrow="Mechanism")
 
     # Cancel
@@ -817,24 +817,22 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
                             eyebrow="Complexity")
 
     # Correctness
-    corr = rk.table(
-        "Differential test: what is compared after every operation",
-        ["Aspect", "Coverage"],
-        [
-            ["Books", "MapBook, FlatBook, FlatBook with a 16-tick window (most prices in the std::map fallback)"],
-            ["Reference", "NaiveBook: a plain sorted list, written for clarity"],
-            ["Operations", "add, cancel, modify"],
-            ["Order types", "limit, market, immediate-or-cancel, fill-or-kill, post-only"],
-            ["Checks", "result, full event stream, depth to 10 levels per side, best bid and ask, order count, invariants"],
-            ["Size", f"{facts['diff_seeds']} seeds × {facts['diff_ops']:,} operations = "
-                     f"{facts['diff_seeds'] * facts['diff_ops']:,}"],
-        ], wrap_cols={1})
+    corr = rk.methodology([
+        ("Books", "MapBook, FlatBook, FlatBook with a 16-tick window (most prices in the std::map fallback)"),
+        ("Reference", "NaiveBook: a plain sorted list, written for clarity"),
+        ("Operations", "add, cancel, modify"),
+        ("Order types", "limit, market, immediate-or-cancel, fill-or-kill, post-only"),
+        ("Checks", "result, full event stream, depth to 10 levels per side, best bid and ask, order count, invariants"),
+        ("Size", f"{facts['diff_seeds']} seeds × {facts['diff_ops']:,} operations = "
+                 f"{facts['diff_seeds'] * facts['diff_ops']:,}"),
+    ])
     corr_body = rk.join([
+        rk.tag("p", "What the differential test compares after every operation:", class_="prose"),
         corr,
         rk.tag("p", Raw(f"The run stops at the first mismatch and prints the seed and operation; CI runs it in the "
                         f"Release build and again under AddressSanitizer and UndefinedBehaviorSanitizer.{R('E5')}{R('E6')} "
                         f"The benchmark itself sends only limit adds, cancels and market orders; the other order types "
-                        f"are covered by tests, not timed."), class_="prose"),
+                        f"are covered by tests, not timed."), class_="prose", style="margin-top:24px"),
     ])
     corr_sec = rk.section("correctness",
                           f"Both books agree with a naive reference on {facts['diff_seeds'] * facts['diff_ops'] / 1e6:g} "
