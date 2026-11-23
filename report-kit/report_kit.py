@@ -172,7 +172,9 @@ def comparison(rows, maximum: float) -> Raw:
 
 def figure(fid: str, takeaway, chart, caption, *, question=None, table=None, data_href=None) -> Raw:
     """Figure panel: takeaway headline above, chart, caption below, optional data table + link."""
-    data_link = f' <a class="src" href="{esc(data_href)}">Data</a>' if data_href else ""
+    path = str(data_href or "").split("#")[0]
+    name = path.split("/blob/", 1)[1].split("/", 1)[-1] if "/blob/" in path else path.rsplit("/", 1)[-1]
+    data_link = f' <a class="src" href="{esc(data_href)}">Data: {esc(name)}</a>' if data_href else ""
     return Raw(
         f'<figure class="figure" id="{esc(fid)}" aria-labelledby="{esc(fid)}-t">'
         f'<h3 class="fig-takeaway" id="{esc(fid)}-t">{esc(takeaway)}</h3>'
@@ -218,7 +220,7 @@ def table(caption, head, rows, *, numeric=(), row_headers=True, wrap_cols=()) ->
 
 def data_table(caption, head, rows, *, numeric=()) -> Raw:
     """Chart fallback: the plotted numbers in a disclosure."""
-    return Raw(f'<details class="data"><summary>Show data</summary>{table(caption, head, rows, numeric=numeric)}</details>')
+    return Raw(f'<details class="data"><summary>Show data table</summary>{table(caption, head, rows, numeric=numeric)}</details>')
 
 
 def methodology(items) -> Raw:
@@ -353,7 +355,7 @@ def ladder_chart(rows, *, uid, width, title, desc, series, points, domain, axis_
     zero_w = 30 if zero_label else 0
     lx = lambda v: plot_l + zero_w + (plot_r - plot_l - zero_w) * (math.log10(v) - math.log10(lo)) / (math.log10(hi) - math.log10(lo))
     x = lambda v: plot_l + zero_w / 2 if v <= 0 else lx(max(v, lo))
-    head_h, sub_h, gap, top = 20, 22, 14, 52
+    head_h, sub_h, gap, top = 20, 22, 14, 70
     row_h = head_h + sub_h * len(series) + gap
     bottom = top + row_h * len(rows) - gap + 4
     parts = []
@@ -369,14 +371,16 @@ def ladder_chart(rows, *, uid, width, title, desc, series, points, domain, axis_
         parts.append(f'<path class="c-floor" d="M{coord(fx)} {top - 14}V{coord(bottom)}"/>')
         if floor_label:
             parts.append(svg_text(fx + 6, top - 12, floor_label, "c-label"))
-    # key: marker shapes, top-right
+    # key: every marker drawn is named, top-right, in plotting order
     kx = plot_r
-    key = [(points[-1], "ring"), (points[0], "dot")]
+    key = [(points[-1], "ring")] + ([(", ".join(points[1:-1]), "small")] if len(points) > 2 else []) + [(points[0], "dot")]
+    marker = {"ring": 'r="4" class="c-stroke-muted" stroke-width="1.5"', "small": 'r="3" class="c-muted"',
+              "dot": 'r="4.5" class="c-muted"'}
     for label, shape in key:
         tw = text_width(label, 12)
         parts.append(svg_text(kx, 16, label, "c-title", "end"))
-        cx = kx - tw - 9
-        parts.append(f'<circle cx="{coord(cx)}" cy="12" r="4" class="{"c-stroke-muted" if shape == "ring" else "c-muted"}" stroke-width="1.5"/>')
+        cx = kx - tw - 12
+        parts.append(f'<circle cx="{coord(cx)}" cy="12" {marker[shape]}/>')
         kx = cx - 16
     for i, row in enumerate(rows):
         y0 = top + i * row_h
@@ -399,7 +403,7 @@ def ladder_chart(rows, *, uid, width, title, desc, series, points, domain, axis_
             parts.append(svg_text(xs[-1] + 9, cy + 4, fmt(vals[points[-1]]), "c-tick"))
         parts.append("</g>")
     if zero_label:
-        parts.append(svg_text(0, 16, zero_label, "c-title"))
+        parts.append(svg_text(0, 36, zero_label, "c-title"))
     parts.append(svg_text(plot_r, bottom + 36, axis_title, "c-title", "end"))
     return svg(uid, width, bottom + 44, title, desc, "".join(parts))
 
