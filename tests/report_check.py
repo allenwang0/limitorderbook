@@ -1,7 +1,8 @@
 """Loads docs/index.html in headless Chromium at phone and desktop widths in
 both color schemes and checks what a reader relies on: no script errors, no
-sideways scrolling on a phone, one latency row per operation, and arrow keys
-that step the replay.
+sideways scrolling on a phone, one latency table row per operation and book,
+a replay that opens on a populated book, and arrow keys that step the replay
+only while the demo has focus (no page-wide shortcuts, WCAG 2.1.4).
 
 Usage: python3 tests/report_check.py [--page docs/index.html] [--shots DIR]
        [--readme-images docs/img]
@@ -13,7 +14,7 @@ import sys
 
 from playwright.sync_api import sync_playwright
 
-EXPECTED_OPS = ["add_resting", "add_crossing", "cancel", "market"]
+EXPECTED_OPS = ["Add, resting", "Add, crossing", "Cancel", "Market"]
 
 
 def check(page_path, shots, readme_images):
@@ -32,26 +33,31 @@ def check(page_path, shots, readme_images):
                 page.goto(url)
                 if errors:
                     failures.append(f"{label}: console errors {errors}")
-                ops = page.eval_on_selector_all("#latency-chart .row", "rows => rows.map(r => r.dataset.op)")
-                if ops != EXPECTED_OPS:
-                    failures.append(f"{label}: latency rows {ops}, expected {EXPECTED_OPS}")
+                ops = page.eval_on_selector_all("#lat-table tbody th", "cells => cells.map(c => c.textContent)")
+                if ops[::2] != EXPECTED_OPS or ops[1::2] != EXPECTED_OPS:
+                    failures.append(f"{label}: latency table rows {ops}, expected each of {EXPECTED_OPS} twice")
                 overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
                 if overflow > 0:
                     failures.append(f"{label}: page scrolls sideways by {overflow}px")
-                before = page.inner_html("#ladder")
+                start = page.evaluate('JSON.parse(document.getElementById("report-data").textContent).replayStart')
+                levels = page.eval_on_selector_all("#ladder tr.bid, #ladder tr.ask", "rows => rows.length")
+                if levels < 6:
+                    failures.append(f"{label}: first replay frame shows {levels} levels, expected at least 6")
+                page.keyboard.press("ArrowRight")
+                if page.get_attribute("#ladder", "data-step") != str(start):
+                    failures.append(f"{label}: ArrowRight outside the demo moved the replay")
+                page.focus("#demo")
                 for _ in range(5):
                     page.keyboard.press("ArrowRight")
-                if page.inner_html("#ladder") == before:
-                    failures.append(f"{label}: ladder unchanged after 5 right-arrow presses")
-                ladder = page.query_selector("#ladder-svg")
-                if ladder is None or ladder.get_attribute("data-step") != "5":
-                    failures.append(f"{label}: ladder not on step 6 after 5 presses")
+                if page.get_attribute("#ladder", "data-step") != str(start + 5):
+                    failures.append(f"{label}: ladder not on step {start + 6} after 5 presses inside the demo")
                 if shots:
                     pathlib.Path(shots).mkdir(parents=True, exist_ok=True)
                     page.screenshot(path=f"{shots}/report-{width}-{scheme}.png", full_page=True)
                 if readme_images and width == 1280 and scheme == "light":
                     pathlib.Path(readme_images).mkdir(parents=True, exist_ok=True)
-                    page.locator("#latency").screenshot(path=f"{readme_images}/latency.png")
+                    page.add_style_tag(content=".bar{position:static}")
+                    page.locator("section:has(#latency) .figure").screenshot(path=f"{readme_images}/latency.png")
                     sweep = page.evaluate(
                         """() => JSON.parse(document.getElementById("report-data").textContent)
                             .replay.findIndex((s) => s.events.filter((e) => e.type === "fill").length >= 2)"""
@@ -62,7 +68,7 @@ def check(page_path, shots, readme_images):
                             "(el, i) => { el.value = String(i); el.dispatchEvent(new Event('input')); }",
                             sweep,
                         )
-                    page.locator("#replay").screenshot(path=f"{readme_images}/replay.png")
+                    page.locator("section:has(#replay)").screenshot(path=f"{readme_images}/replay.png")
                 context.close()
         browser.close()
     return failures
