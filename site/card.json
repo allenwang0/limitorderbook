@@ -1,17 +1,17 @@
 {
   "schema_version": 1,
   "repo": "limitorderbook",
-  "sha": "346f4def279142113642577ace8843926ba3b014",
-  "generated_at": "2026-11-12T05:55:08Z",
+  "sha": "bbfe7f1868ffa829b28ddd23dd7ba6e7d9811cf0",
+  "generated_at": "2026-11-23T04:26:10Z",
   "command": "scripts/run_bench.sh",
-  "data_note": "Seeded synthetic order flow, 55/40/5 add/cancel/market, MapBook, Apple M5 Pro, Apple LLVM 21.0.0 (clang-2100.4.1.1)",
+  "data_note": "Seeded synthetic order flow, 55/40/5 add/cancel/market, median of 10 runs, Apple M5 Pro, Apple LLVM 21.0.0 (clang-2100.4.1.1); latency chart: MapBook p50/p90/p99",
   "metric": {
-    "label": "Median add latency",
-    "value": 41.0,
-    "unit": "ns",
-    "higher_is_better": false
+    "label": "FlatBook throughput vs MapBook",
+    "value": 1.86,
+    "unit": "×",
+    "higher_is_better": true
   },
-  "takeaway": "MapBook p99: add 84, cancel 42, match 125 ns; 31.1M msgs/s (32 ns mean); 41 ns clock tick.",
+  "takeaway": "FlatBook 55.6M vs MapBook 30.0M msgs/s, median of 10 runs, one core, Apple M5 Pro.",
   "chart": {
     "type": "interval",
     "x_label": "Latency",
@@ -28,7 +28,7 @@
         "label": "cancel",
         "low": 41.0,
         "mid": 42.0,
-        "high": 42.0
+        "high": 83.0
       },
       {
         "label": "match",

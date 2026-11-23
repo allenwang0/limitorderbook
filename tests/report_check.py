@@ -1,7 +1,7 @@
 """Loads docs/index.html in headless Chromium at phone and desktop widths in
 both color schemes and checks what a reader relies on: no script errors, no
-sideways scrolling on a phone, one latency row per operation, and arrow keys
-that step the replay.
+sideways scrolling on a phone, one latency row per operation in the chart
+variant actually shown at that width, and charts present with JavaScript off.
 
 Usage: python3 tests/report_check.py [--page docs/index.html] [--shots DIR]
        [--readme-images docs/img]
@@ -14,6 +14,9 @@ import sys
 from playwright.sync_api import sync_playwright
 
 EXPECTED_OPS = ["add_resting", "add_crossing", "cancel", "market"]
+VISIBLE_ROWS = """() => [...document.querySelectorAll('#fig-latency svg')]
+    .filter(s => s.getBoundingClientRect().width > 0)
+    .map(s => [...s.querySelectorAll('[data-row]')].map(g => g.dataset.row))"""
 
 
 def check(page_path, shots, readme_images):
@@ -32,38 +35,25 @@ def check(page_path, shots, readme_images):
                 page.goto(url)
                 if errors:
                     failures.append(f"{label}: console errors {errors}")
-                ops = page.eval_on_selector_all("#latency-chart .row", "rows => rows.map(r => r.dataset.op)")
-                if ops != EXPECTED_OPS:
-                    failures.append(f"{label}: latency rows {ops}, expected {EXPECTED_OPS}")
+                shown = page.evaluate(VISIBLE_ROWS)
+                if shown != [EXPECTED_OPS]:
+                    failures.append(f"{label}: visible latency charts {shown}, expected one with {EXPECTED_OPS}")
                 overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
                 if overflow > 0:
                     failures.append(f"{label}: page scrolls sideways by {overflow}px")
-                before = page.inner_html("#ladder")
-                for _ in range(5):
-                    page.keyboard.press("ArrowRight")
-                if page.inner_html("#ladder") == before:
-                    failures.append(f"{label}: ladder unchanged after 5 right-arrow presses")
-                ladder = page.query_selector("#ladder-svg")
-                if ladder is None or ladder.get_attribute("data-step") != "5":
-                    failures.append(f"{label}: ladder not on step 6 after 5 presses")
                 if shots:
                     pathlib.Path(shots).mkdir(parents=True, exist_ok=True)
                     page.screenshot(path=f"{shots}/report-{width}-{scheme}.png", full_page=True)
                 if readme_images and width == 1280 and scheme == "light":
                     pathlib.Path(readme_images).mkdir(parents=True, exist_ok=True)
-                    page.locator("#latency").screenshot(path=f"{readme_images}/latency.png")
-                    sweep = page.evaluate(
-                        """() => JSON.parse(document.getElementById("report-data").textContent)
-                            .replay.findIndex((s) => s.events.filter((e) => e.type === "fill").length >= 2)"""
-                    )
-                    if sweep >= 0:
-                        page.eval_on_selector(
-                            "#scrubber",
-                            "(el, i) => { el.value = String(i); el.dispatchEvent(new Event('input')); }",
-                            sweep,
-                        )
-                    page.locator("#replay").screenshot(path=f"{readme_images}/replay.png")
+                    page.locator("#fig-throughput").screenshot(path=f"{readme_images}/throughput.png")
                 context.close()
+        context = browser.new_context(java_script_enabled=False, viewport={"width": 1280, "height": 900})
+        page = context.new_page()
+        page.goto(url)
+        if page.locator("svg[role=img]").count() < 4:
+            failures.append("JavaScript off: charts missing")
+        context.close()
         browser.close()
     return failures
 
@@ -77,7 +67,7 @@ def main():
     failures = check(args.page, args.shots, args.readme_images)
     for failure in failures:
         print(f"FAIL {failure}")
-    print(f"report check: {len(failures)} failures across 4 viewport/scheme combinations")
+    print(f"report check: {len(failures)} failures across 4 viewport/scheme combinations and JavaScript off")
     sys.exit(1 if failures else 0)
 
 

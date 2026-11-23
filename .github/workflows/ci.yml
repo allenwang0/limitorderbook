@@ -75,24 +75,39 @@ jobs:
         run: clang-tidy -p build $(git ls-files 'src/*.cpp' 'tools/*.cpp')
 
   report:
+    # Pages publishes the report built from the committed results/bench.json
+    # (repeated runs on a named machine). The benchmark below is only a smoke
+    # test on a shared runner; its output is uploaded but never published.
     runs-on: ubuntu-24.04
     env:
       CC: gcc-14
       CXX: g++-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # build_report.py links results to the commit that last changed them
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y ninja-build
       - run: pip install -r requirements-dev.txt
       - run: playwright install --with-deps chromium
-      - name: Benchmark (short mode), replay, report, card and README table
-        run: scripts/run_bench.sh --benchmark_min_time=0.1s
+      - name: Report kit matches its pinned hashes
+        run: python report-kit/check_kit.py
+      - name: Build benchmark and replay
+        run: cmake --preset default && cmake --build --preset default --target lob_bench lob_replay
+      - name: Benchmark smoke test (not published)
+        run: ./build/lob_bench --benchmark_min_time=0.05s --benchmark_out="$RUNNER_TEMP/bench-smoke.json" --benchmark_out_format=json
       - uses: actions/upload-artifact@v4
         with:
-          name: bench-json
-          path: results/bench.json
+          name: bench-smoke-json
+          path: ${{ runner.temp }}/bench-smoke.json
+      - name: Replay output matches the committed results/replay.jsonl
+        run: ./build/lob_replay examples/demo_flow.txt | diff - results/replay.jsonl
+      - name: Committed report, card and README block are current
+        run: |
+          python scripts/build_report.py --card site/card.json --readme README.md
+          git diff --exit-code -- docs site README.md
       - name: Card matches the site schema
         run: check-jsonschema --schemafile tests/fixtures/card.schema.json site/card.json
       - name: Report and card unit tests
