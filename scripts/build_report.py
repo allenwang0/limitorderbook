@@ -716,7 +716,7 @@ def build_page(bench, bench_error, steps, replay_error):
     if bench:
         context = bench["context"]
         footer = (
-            f'Data: <span class="mono">results/bench.json</span> · run at commit '
+            f'Data from the run at commit '
             f'<span class="mono">{esc(context["git_sha"][:7])}</span> · {esc(context["date"][:10])}'
         )
         summary = throughput_summary(bench)

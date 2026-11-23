@@ -98,7 +98,3 @@
 @media (max-width: 599px) { .method dl.defs { grid-template-columns: 1fr; gap: 2px; } .method dl.defs dd { margin-bottom: 10px; } }
 .method { margin-top: 24px; }
 .small-note { margin-top: 12px; font-size: 14px; color: var(--ink-3); max-width: var(--measure); }
-.codewrap pre { padding-right: 64px; }
-/* kit charts draw at >= 260 px; at 320 px the figure's content box is 246 px,
-   which would scale tick text below 11 px. Borrow the figure's padding. */
-@media (max-width: 359px) { #lat-plot.plot { width: auto; margin-inline: -8px; } }
