@@ -45,7 +45,6 @@ NO_BENCH = "No benchmark data: run scripts/build_report.py after cmake --build"
 NO_REPLAY = "No replay data: run scripts/build_report.py after cmake --build"
 README_START = "<!-- results:start -->"
 README_END = "<!-- results:end -->"
-THIN = " "
 
 
 def compiler_html(name):
@@ -262,8 +261,8 @@ def derive(bench):
 
 
 def m_rate(value):
-    """Messages per second as millions, 3 significant figures, thin space before M."""
-    return f"{value / 1e6:.1f}{THIN}M"
+    """Messages per second as millions, 3 significant figures, no-break space before M."""
+    return rk.num(f"{value / 1e6:.1f}", "M")
 
 
 def ratio_text(value):
@@ -271,7 +270,7 @@ def ratio_text(value):
 
 
 def ns(value):
-    return f"{value:,.0f}{THIN}ns"
+    return rk.num(f"{value:,.0f}", "ns")
 
 
 def pct(value):
@@ -390,7 +389,7 @@ def throughput_chart(bench, uid, width, whiskers):
     return rk.bar_chart(rows, uid=uid, width=width, title=title, desc=desc,
                         axis_title="Throughput (million messages/s), bars from zero" if width >= 420
                         else "Million messages/s, bars from zero",
-                        fmt=lambda v: f"{v:.1f}{THIN}M/s")
+                        fmt=lambda v: rk.num(f"{v:.1f}", "M/s"))
 
 
 def latency_chart(bench, uid, width):
@@ -620,9 +619,9 @@ def evidence_rows(bench, d, facts, src_sha, res_sha):
         ("E1", f"FlatBook {m_rate(d['flat'])} vs MapBook {m_rate(d['map'])} messages/s, {runs_text(d['reps'])}",
          "results/bench.json", bench_href, "Measured"),
         ("E2", f"FlatBook throughput {ratio_text(d['ratio'])} MapBook's", "ratio of the E1 medians", bench_href, "Derived"),
-        ("E3", f"Average time per message {d['flat_ns']:.0f} ns vs {d['map_ns']:.0f} ns", "10⁹ ÷ E1 medians",
+        ("E3", f"Average time per message {ns(d['flat_ns'])} vs {ns(d['map_ns'])}", "10⁹ ÷ E1 medians",
          bench_href, "Derived"),
-        ("E4", f"Clock tick {d['tick']:.0f} ns", f"BM_ClockOverhead, bench/lob_bench.cpp:{clock[0]}–{clock[1]}",
+        ("E4", f"Clock tick {ns(d['tick'])}", f"BM_ClockOverhead, bench/lob_bench.cpp:{clock[0]}–{clock[1]}",
          blob("bench/lob_bench.cpp", src_sha, *clock), "Measured"),
         ("E5", f"0 mismatches over {facts['diff_seeds']} seeds × {facts['diff_ops']:,} operations",
          f"tests/differential_test.cpp:{diff[0]}–{diff[1]}, run by ctest in CI",
@@ -657,7 +656,7 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
     R = lambda eid: rk.ref(eid)
     runs = runs_text(d["reps"])
     mix = ctx["message_mix"]
-    measured = f"{facts['measured'] / 1e6:g}{THIN}M"
+    measured = rk.num(f"{facts['measured'] / 1e6:g}", "M")
     bench_href = ev["E1"][3]
 
     hero = rk.hero(
@@ -699,7 +698,7 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
             rk.tag("h3", "Time per message", class_="card-heading"),
             rk.comparison([("FlatBook", d["flat_ns"], ns(d["flat_ns"]), True),
                            ("MapBook", d["map_ns"], ns(d["map_ns"]), False)], max(d["flat_ns"], d["map_ns"], d["tick"])),
-            rk.tag("p", Raw(f"Average, derived from throughput.{R('E3')} Both sit below the {d['tick']:.0f}{THIN}ns "
+            rk.tag("p", Raw(f"Average, derived from throughput.{R('E3')} Both sit below the {ns(d['tick'])} "
                             f"clock tick{R('E4')}, which is why throughput, not per-message timing, is the headline.")),
         ])),
         (6, 4, rk.join([
@@ -750,14 +749,14 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
     tail_label = dict(OPS)[tail_op]
     lat_fig = rk.figure(
         "fig-latency",
-        f"{d['p50_at_floor']} of {d['p50_total']} medians are at or below one {tick:.0f}{THIN}ns clock tick",
+        f"{d['p50_at_floor']} of {d['p50_total']} medians are at or below one {ns(tick)} clock tick",
         rk.variants(latency_chart(bench, "lat-d", 1000), latency_chart(bench, "lat-t", 640),
                     latency_chart(bench, "lat-p", 320)),
         rk.join([rk.tag("p", Raw(
             f"Each row: p50 (filled dot), p90, p99 and p99.9 (ring, value labelled) of one operation, from "
             f"{facts['measured']:,} individually timed messages per run; each percentile is the {runs}. "
-            f"<code>steady_clock</code> advances in {tick:.0f}{THIN}ns steps, so a call that starts and ends within "
-            f"one tick reads 0{THIN}ns; those are drawn in the shaded band.{R('E4')}"))]),
+            f"<code>steady_clock</code> advances in {ns(tick)} steps, so a call that starts and ends within "
+            f"one tick reads {ns(0)}; those are drawn in the shaded band.{R('E4')}"))]),
         question="How long does a single add, cancel or market order take, and can the clock resolve it?",
         table=rk.data_table(
             "Latency percentiles (ns), median across runs, with p99.9 range across runs",
@@ -859,7 +858,7 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
         ("Warm-up and size", f"{facts['warmup']:,} untimed messages, then {facts['measured']:,} timed, per iteration"),
         ("Repetitions", f"{d['reps']}; iterations per repetition: {iters}"),
         ("Throughput", "items per second from Google Benchmark CPU time; median across repetitions, whiskers min–max"),
-        ("Latency timer", f"std::chrono::steady_clock around each call; measured tick {tick:.0f} ns; percentiles "
+        ("Latency timer", f"std::chrono::steady_clock around each call; measured tick {ns(tick)}; percentiles "
                           f"within each run (nearest rank), then the median across runs"),
         ("Load average", f"{load_b} before, {load_a} after (1 / 5 / 15 min); shared machine, not idle"
          if load_b and load_a else load_b),
@@ -887,7 +886,7 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
     steps_html = rk.reproduce([
         ("Build in Release and run all tests (CMake 3.25+, Ninja, a C++17 compiler; downloads GoogleTest and "
          "Google Benchmark). Expect “100% tests passed”.", "cmake --workflow --preset default"),
-        (Raw(f"Run the benchmark ({d['reps']} repetitions, about {bench['timed_seconds']:.0f}{THIN}s of timed work "
+        (Raw(f"Run the benchmark ({d['reps']} repetitions, about {rk.num(f"{bench['timed_seconds']:.0f}", "s")} of timed work "
              f"here), the replay, and rebuild this page, the card and the README table from the results."),
          "scripts/run_bench.sh"),
         (Raw(f"Check the differential test line: “differential: {facts['diff_seeds']} seeds x {facts['diff_ops']} ops = "

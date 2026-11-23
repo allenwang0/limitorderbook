@@ -67,10 +67,10 @@ class BuildReportTest(unittest.TestCase):
         text = text_of(page)
         n = counts["FlatBook"]
         self.assertGreaterEqual(n, 10, "the report promises at least 10 repetitions")
-        self.assertIn(f"{rates['FlatBook'] / 1e6:.1f} M vs {rates['MapBook'] / 1e6:.1f} M messages per second, "
+        self.assertIn(f"{rates['FlatBook'] / 1e6:.1f}\u00a0M vs {rates['MapBook'] / 1e6:.1f}\u00a0M messages per second, "
                       f"median of {n} runs", text)
         self.assertIn(f"FlatBook processes {ratio:.2f}× as many messages per second", text)
-        self.assertIn(f"{1e9 / rates['FlatBook']:.0f} ns", text, "time per message derived from the median")
+        self.assertIn(f"{1e9 / rates['FlatBook']:.0f}\u00a0ns", text, "time per message derived from the median")
 
     def test_committed_page_and_readme_are_current(self):
         # Pages publishes docs/ as committed; a stale page would show numbers
