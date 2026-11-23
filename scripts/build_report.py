@@ -48,6 +48,12 @@ README_END = "<!-- results:end -->"
 THIN = " "
 
 
+def compiler_html(name):
+    """Compiler name with its parenthetical build id kept on one line."""
+    head, sep, tail = name.partition(" (")
+    return Raw(f'{esc(head)} <span class="nowrap">({esc(tail)}</span>') if sep else esc(name)
+
+
 def label_compiler(version):
     """GCC's __VERSION__ is a bare number such as "14.2.0"; Clang's names itself."""
     return f"GCC {version}" if re.match(r"\d", version) else version
@@ -382,7 +388,8 @@ def throughput_chart(bench, uid, width, whiskers):
         for r in rows
     ) + f"; {runs_text(d['reps'])}."
     return rk.bar_chart(rows, uid=uid, width=width, title=title, desc=desc,
-                        axis_title="Throughput (million messages/s), bars from zero",
+                        axis_title="Throughput (million messages/s), bars from zero" if width >= 420
+                        else "Million messages/s, bars from zero",
                         fmt=lambda v: f"{v:.1f}{THIN}M/s")
 
 
@@ -663,8 +670,9 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
         support=Raw(f"{m_rate(d['flat'])} vs {m_rate(d['map'])} messages per second, {runs}{R('E1')}"),
         context=f"One core, {ctx['cpu']}, {measured} synthetic messages per run ({mix}).",
         actions=[("Source", REPO_URL, True), ("Run the benchmark", "#reproduce", False)],
-        figure=rk.variants(throughput_chart(bench, "hero-d", 420, False), throughput_chart(bench, "hero-t", 640, False),
-                           throughput_chart(bench, "hero-p", 300, False)),
+        figure=rk.tag("p", f"Throughput, {runs}", class_="card-label")
+        + rk.variants(throughput_chart(bench, "hero-d", 398, False), throughput_chart(bench, "hero-t", 640, False),
+                      throughput_chart(bench, "hero-p", 270, False)),
     )
 
     nav = rk.report_nav([("findings", "Findings"), ("replay", "Matching"), ("throughput", "Throughput"),
@@ -709,13 +717,13 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
     # Throughput
     tput_fig = rk.figure(
         "fig-throughput",
-        f"FlatBook sustains {ratio_text(d['ratio'])} MapBook's throughput",
+        f"Even the slowest FlatBook run beat the fastest MapBook run by {ratio_text(d['ratio_floor'])}",
         rk.variants(throughput_chart(bench, "tp-d", 1000, True), throughput_chart(bench, "tp-t", 640, True),
                     throughput_chart(bench, "tp-p", 300, True)),
         rk.join([rk.tag("p", Raw(
             f"Bars: {runs}; whiskers: fastest and slowest of the {d['reps']} repetitions. Each repetition times "
             f"{facts['measured']:,} messages after {facts['warmup']:,} untimed warm-up messages, seed {esc(ctx['seed'])}, "
-            f"{esc(ctx['compiler'])} <code>{esc(ctx['cxx_flags'])}</code>, one core of an {esc(ctx['cpu'])}.{R('E1')}"))]),
+            f"{compiler_html(ctx['compiler'])} <code>{esc(ctx['cxx_flags'])}</code>, one core of an {esc(ctx['cpu'])}.{R('E1')}"))]),
         question="How many messages per second does each book process on the same flow?",
         table=rk.data_table("Throughput per book (million messages/s)", ["Book", "Median", "Min", "Max", "Runs"],
                             [[b, f"{bench['throughput'][b]['median'] / 1e6:.2f}", f"{bench['throughput'][b]['min'] / 1e6:.2f}",
@@ -726,9 +734,6 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
     tput_body = rk.join([
         tput_fig,
         Raw('<div class="prose" style="margin-top:32px">'),
-        rk.tag("p", Raw(
-            f"The gap is not a product of run-to-run noise: the slowest FlatBook repetition still processed "
-            f"{ratio_text(d['ratio_floor'])} as many messages as the fastest MapBook repetition.")),
         rk.tag("p", Raw(
             "For a price inside the window, FlatBook reaches its level with one array index, and its order nodes sit "
             "contiguously in one vector. MapBook walks a red-black tree — O(log n) pointer hops — and allocates a list "
@@ -845,7 +850,7 @@ def build_page(bench, bench_error, steps, replay_error, results_sha=None):
     method = rk.methodology([
         ("Hardware", f"{ctx['cpu']}, {ctx['num_cpus']} cores; benchmark uses one thread" if ctx["num_cpus"] else ctx["cpu"]),
         ("Operating system", None),
-        ("Compiler", Raw(f"{esc(ctx['compiler'])}, <code>{esc(ctx['cxx_flags'])}</code>, CMake Release preset")),
+        ("Compiler", Raw(f"{compiler_html(ctx['compiler'])}, <code>{esc(ctx['cxx_flags'])}</code>, CMake Release preset")),
         ("Harness", f"Google Benchmark {ctx['library_version']} ({ctx['build_type']} build)"),
         ("Code measured", Raw(f'<a class="src" href="{REPO_URL}/tree/{esc(src_sha)}">{esc(src_sha[:7])}</a>')),
         ("Data", Raw(f"Seeded synthetic flow, seed {esc(ctx['seed'])}; target mix {esc(mix)}, measured "
