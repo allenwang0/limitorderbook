@@ -6,7 +6,10 @@ Usage:
       [--replay results/replay.jsonl] [--out docs/index.html]
       [--card site/card.json] [--readme README.md]
 
-Python standard library only. Every number on the page comes from the inputs.
+Python standard library only. Every number on the page comes from the inputs,
+or from constants in the benchmark and test sources (warm-up length, seeds).
+The page loads report-kit from docs/kit/ and its own docs/report.local.css
+and docs/report.local.js, so build it into docs/.
 """
 
 import argparse
@@ -17,19 +20,31 @@ import os
 import re
 import sys
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_URL = "https://github.com/allenwang0/limitorderbook"
+PAGES_URL = "https://allenwang0.github.io/limitorderbook/"
 BOOKS = ["MapBook", "FlatBook"]
 OPS = [
-    ("add_resting", "add (resting)"),
-    ("add_crossing", "add (crossing)"),
-    ("cancel", "cancel"),
-    ("market", "market"),
+    ("add_resting", "Add, resting"),
+    ("add_crossing", "Add, crossing"),
+    ("cancel", "Cancel"),
+    ("market", "Market"),
 ]
+OP_PLURALS = {
+    "add_resting": "resting adds",
+    "add_crossing": "crossing adds",
+    "cancel": "cancels",
+    "market": "market orders",
+}
 PERCENTILES = ["p50", "p90", "p99", "p99.9", "max"]
 DEFAULT_BOOK = "MapBook"
 NO_BENCH = "No benchmark data: run scripts/build_report.py after cmake --build"
 NO_REPLAY = "No replay data: run scripts/build_report.py after cmake --build"
 README_START = "<!-- results:start -->"
 README_END = "<!-- results:end -->"
+# The replay opens on the first step whose book has at least this many price
+# levels, so the first frame already shows two populated sides.
+REPLAY_START_LEVELS = 6
 
 
 def label_compiler(version):
@@ -50,8 +65,10 @@ def load_bench(path):
     latency = {}
     throughput = {}
     clock = {}
+    repetitions = 1
     for bench in raw.get("benchmarks", []):
         name = bench.get("name", "")
+        repetitions = max(repetitions, int(bench.get("repetitions", 1)))
         match = re.match(r"BM_(Latency|Throughput)<(\w+)>", name)
         if name.startswith("BM_ClockOverhead"):
             clock = {
@@ -81,10 +98,14 @@ def load_bench(path):
             "message_mix": context.get("message_mix", "unknown"),
             "seed": context.get("seed", "unknown"),
             "build_type": context.get("library_build_type", "unknown"),
+            "library_version": context.get("library_version"),
+            "num_cpus": context.get("num_cpus"),
+            "load_avg": context.get("load_avg"),
         },
         "clock": clock,
         "latency": latency,
         "throughput": throughput,
+        "repetitions": repetitions,
     }, None
 
 
@@ -109,30 +130,149 @@ def load_replay(path):
     return steps, None
 
 
-def format_ns(value):
-    return f"{value:,.0f} ns"
+def source_number(relpath, pattern):
+    """First number captured by pattern in a repo source file, or None.
+
+    Used for constants that the benchmark and tests define but do not write to
+    their output (warm-up length, differential-test seeds), so the page quotes
+    the code instead of a hand-typed copy.
+    """
+    try:
+        with open(os.path.join(ROOT, relpath), encoding="utf-8") as handle:
+            match = re.search(pattern, handle.read())
+    except OSError:
+        return None
+    return float(match.group(1).replace("'", "")) if match else None
+
+
+def source_facts():
+    seeds = source_number("tests/differential_test.cpp", r'envOr\("LOB_DIFF_SEEDS",\s*([\d\']+)\)')
+    ops = source_number("tests/differential_test.cpp", r'envOr\("LOB_DIFF_OPS",\s*([\d\']+)\)')
+    try:
+        with open(os.path.join(ROOT, "CMakeLists.txt"), encoding="utf-8") as handle:
+            sanitizers = "-fsanitize=address,undefined" in handle.read()
+    except OSError:
+        sanitizers = False
+    return {
+        "diff_seeds": int(seeds) if seeds else None,
+        "diff_ops": int(ops) if ops else None,
+        "sanitizers": sanitizers,
+        "warmup": source_number("bench/lob_bench.cpp", r"kWarmupMessages\s*=\s*([\d']+)"),
+        "crossing_share": source_number("bench/lob_bench.cpp", r"kCrossingAddShare\s*=\s*([\d.]+)"),
+    }
+
+
+def esc(text):
+    return html.escape(str(text), quote=True)
+
+
+def join_names(names):
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def tick_words(count):
+    words = {1: "one", 2: "two", 3: "three"}
+    return f"{words.get(count, count)} tick{'s' if count != 1 else ''}"
+
+
+def throughput_summary(bench):
+    rates = bench["throughput"]
+    if not all(rates.get(book) for book in BOOKS):
+        return None
+    return {
+        "flat": rates["FlatBook"],
+        "map": rates["MapBook"],
+        "ratio": rates["FlatBook"] / rates["MapBook"],
+    }
 
 
 def takeaway_latency(bench):
+    """Headline and sentence for the p99 latency comparison.
+
+    Latencies are quantized to the timer's tick. A difference under two ticks
+    can come from one sample landing on the other side of a tick boundary, so
+    it is reported as within the timer's resolution, not as a speedup.
+    """
     latency = bench["latency"]
-    if not all(book in latency and "cancel" in latency[book] for book in BOOKS):
-        return ""
-    flat = latency["FlatBook"]["cancel"]["p99"]
-    mapped = latency["MapBook"]["cancel"]["p99"]
-    text = f"FlatBook cancel p99: {format_ns(flat)} vs MapBook {format_ns(mapped)}"
+    if not all(op in latency.get(book, {}) for book in BOOKS for op, _ in OPS):
+        return None
     tick = bench["clock"].get("tick_ns")
-    return f"{text} (clock tick {format_ns(tick)})." if tick else f"{text}."
-
-
-def takeaway_throughput(bench):
-    rates = bench["throughput"]
-    if not all(book in rates for book in BOOKS):
-        return ""
-    ratio = rates["FlatBook"] / rates["MapBook"]
-    return (
-        f"FlatBook processes {rates['FlatBook'] / 1e6:.2f}M msgs/s, "
-        f"{ratio:.2f}x MapBook's {rates['MapBook'] / 1e6:.2f}M on the same flow."
+    deltas = {op: latency["MapBook"][op]["p99"] - latency["FlatBook"][op]["p99"] for op, _ in OPS}
+    p99 = {book: [latency[book][op]["p99"] for op, _ in OPS] for book in BOOKS}
+    foot = (
+        f"p99 FlatBook {min(p99['FlatBook']):.0f}–{max(p99['FlatBook']):.0f} ns · "
+        f"MapBook {min(p99['MapBook']):.0f}–{max(p99['MapBook']):.0f} ns · {len(OPS)} operation types"
     )
+    if tick and all(abs(delta) < 2 * tick for delta in deltas.values()):
+        groups = {}
+        for op, _ in OPS:
+            groups.setdefault(round(deltas[op] / tick), []).append(OP_PLURALS[op])
+        clauses = []
+        for ticks in sorted(groups, reverse=True):
+            names = join_names(groups[ticks])
+            if ticks == 0:
+                clauses.append(f"equal on {names}")
+            else:
+                clauses.append(f"{tick_words(abs(ticks))} {'lower' if ticks > 0 else 'higher'} on {names}")
+        most = max(abs(t) for t in groups)
+        return {
+            "resolved": False,
+            "headline": "Per-message latency sits at the timer's resolution, so it can't separate the books",
+            "text": (
+                f"FlatBook's p99 is {', and '.join(clauses)}. "
+                f"Every difference is under two {tick:.0f} ns clock ticks, within the timer's resolution."
+            ),
+            "metric": "Equal at p99" if most == 0 else f"Within {tick_words(most)}",
+            "short": "The books' p99s are equal on every operation." if most == 0 else
+            f"The books' p99s differ by at most {tick_words(most)} ({most * tick:.0f} ns) per operation.",
+            "foot": foot,
+        }
+    lower = [op for op, _ in OPS if deltas[op] > 0]
+    pairs = ", ".join(
+        f"{OP_PLURALS[op]} {latency['FlatBook'][op]['p99']:.0f} vs {latency['MapBook'][op]['p99']:.0f} ns"
+        for op, _ in OPS
+    )
+    tick_note = f" Clock tick {tick:.0f} ns." if tick else ""
+    if lower:
+        headline = f"FlatBook's p99 latency is lower on {len(lower)} of {len(OPS)} operation types"
+    else:
+        headline = "FlatBook's p99 latency is not lower than MapBook's on any operation type"
+    return {
+        "resolved": True,
+        "headline": headline,
+        "text": f"p99, FlatBook vs MapBook: {pairs}.{tick_note}",
+        "metric": f"{len(lower)} of {len(OPS)} lower",
+        "short": f"FlatBook's p99 is lower on {len(lower)} of {len(OPS)} operation types (single run).",
+        "foot": foot,
+    }
+
+
+def grid_step(bench):
+    """Spacing of the latency gridlines: the step the recorded values sit on.
+
+    lob_bench reports the tick as a whole number of ns, but the recorded
+    percentiles are multiples of a slightly different step (41.67 ns on Apple
+    silicon shows up as 42, 83, 125 ...). The largest recorded multiple gives
+    the finest estimate of that step, so the gridlines land on the values.
+    """
+    tick = bench["clock"].get("tick_ns")
+    if not tick:
+        return None
+    best = (0, tick)
+    for book in bench["latency"].values():
+        for stats in book.values():
+            for p in ("p50", "p90", "p99", "p99.9"):
+                k = round(stats[p] / tick)
+                if k > best[0]:
+                    best = (k, stats[p] / k)
+    return best[1]
+
+
+def replay_start(steps):
+    for index, step in enumerate(steps):
+        if len(step["bids"]) + len(step["asks"]) >= REPLAY_START_LEVELS:
+            return index
+    return 0
 
 
 def card_rows(bench, book):
@@ -196,9 +336,10 @@ def readme_table(bench):
         if rate:
             lines.append(f"| {book} | {rate / 1e6:.2f}M |")
     lines.append("")
+    runs = "single run" if bench["repetitions"] == 1 else f"{bench['repetitions']} runs"
     lines.append(
-        f"Single thread on {context['cpu']}, seeded synthetic flow ({context['message_mix']}). "
-        "Per-operation latency percentiles are in the [report](docs/index.html)."
+        f"One thread on {context['cpu']}, {runs}, seeded synthetic flow ({context['message_mix']}). "
+        f"Latency percentiles and a replay are in the [report]({PAGES_URL})."
     )
     return "\n".join(lines)
 
@@ -214,321 +355,429 @@ def update_readme(path, bench):
         handle.write(f"{head}{README_START}\n{readme_table(bench)}\n{README_END}{tail}")
 
 
-def build_page(bench, bench_error, steps, replay_error):
-    payload = {
-        "books": BOOKS,
-        "ops": [{"key": key, "label": label} for key, label in OPS],
-        "bench": bench,
-        "benchError": bench_error,
-        "latencyTakeaway": takeaway_latency(bench) if bench else "",
-        "throughputTakeaway": takeaway_throughput(bench) if bench else "",
-        "replay": steps,
-        "replayError": replay_error,
-    }
-    data = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
+# ---------------------------------------------------------------- page parts
+
+
+def empty_note(message):
+    return f'<p class="caveat" role="note"><b>Missing data.</b> {esc(message)}</p>'
+
+
+def hero_html(bench, bench_error):
+    lede = (
+        "A limit order book pairs buy and sell orders by price, then by arrival time. "
+        "Two C++17 versions run the same seeded order flow: <b>MapBook</b> keeps price levels in a "
+        '<span class="mono">std::map</span>; <b>FlatBook</b> keeps levels near the market in a flat array '
+        "indexed by price."
+    )
+    summary = throughput_summary(bench) if bench else None
+    if not summary:
+        return (
+            '<section class="hero wrap" aria-labelledby="h1"><p class="eyebrow">Benchmark · C++17</p>'
+            '<h1 id="h1">Limit order book benchmark</h1>'
+            f'<p class="lede">{lede}</p><div id="throughput">{empty_note(bench_error or NO_BENCH)}</div></section>'
+        )
+    context = bench["context"]
+    runs = "Single run" if bench["repetitions"] == 1 else f"{bench['repetitions']} runs"
+    measured = sum(s["count"] for s in bench["latency"].get("FlatBook", {}).values())
+    conditions = "".join(
+        f'<span class="{cls}">{esc(text)}</span>'
+        for cls, text in (
+            ("key", "Synthetic order flow"),
+            ("key", runs),
+            ("", "One thread"),
+            ("", context["cpu"]),
+        )
+    )
+    rows = ""
+    top = max(summary["flat"], summary["map"])
+    for book, rate, note, color in (
+        ("FlatBook", summary["flat"], "flat array", "var(--series-1)"),
+        ("MapBook", summary["map"], "std::map", "var(--series-2)"),
+    ):
+        rows += (
+            f'<span class="who">{book}<small>{note}</small></span>'
+            f'<span class="track"><span class="b" style="width:{rate / top * 70:.1f}%;background:{color}"></span>'
+            f'<span class="v num">{rate / 1e6:.2f} M msgs/s</span></span>'
+        )
+    label = (
+        f"Throughput: FlatBook {summary['flat'] / 1e6:.2f} million messages per second, "
+        f"MapBook {summary['map'] / 1e6:.2f} million."
+    )
+    return f"""<section class="hero wrap" aria-labelledby="h1">
+  <p class="eyebrow">Benchmark · C++17</p>
+  <h1 id="h1">An order book that matches {summary['flat'] / 1e6:.0f} million messages a second</h1>
+  <p class="lede">{lede}</p>
+  <p class="conditions">{conditions}</p>
+  <div id="throughput">
+    <div class="ratio"><span class="fig num">{summary['ratio']:.2f}×</span><span class="cap">FlatBook's throughput relative to MapBook on the same {measured:,} messages.</span></div>
+    <div class="paired" role="img" aria-label="{esc(label)}">{rows}</div>
+  </div>
+</section>"""
+
+
+def bento_html(bench, facts):
+    if not bench:
+        return ""
+    cards = []
+    lat = takeaway_latency(bench)
+    if lat:
+        cards.append(
+            f'<a class="card span-8" href="#latency"><span class="label">Per-message latency, p99</span>'
+            f'<span class="metric">{esc(lat["metric"])}</span><span class="cmp">{esc(lat["short"])}</span>'
+            f'<span class="foot">{esc(lat["foot"])}</span></a>'
+        )
+    if facts["diff_seeds"] and facts["diff_ops"]:
+        sanit = " The same test also runs under ASan and UBSan." if facts["sanitizers"] else ""
+        cards.append(
+            f'<div class="card span-4 t-full"><span class="label">Correctness</span>'
+            f'<span class="metric num">{facts["diff_seeds"]} <span class="unit">seeds</span></span>'
+            f'<span class="cmp">× {facts["diff_ops"]:,} ops each. Both books are checked op by op against a '
+            f"naive reference book.{sanit}</span>"
+            f'<span class="foot"><a href="{REPO_URL}/blob/main/tests/differential_test.cpp">'
+            "tests/differential_test.cpp</a></span></div>"
+        )
+    context = bench["context"]
+    measured = sum(s["count"] for s in bench["latency"].get("FlatBook", {}).values())
+    warm = f", after {facts['warmup']:,.0f} warm-up messages" if facts["warmup"] else ""
+    cards.append(
+        f'<div class="card span-6"><span class="label">Workload</span>'
+        f'<span class="metric num">{measured / 1e6:g} M <span class="unit">messages</span></span>'
+        f'<span class="cmp">{esc(context["message_mix"])}{warm}.</span>'
+        f'<span class="foot">Seed {esc(context["seed"])} · synthetic, not market data</span></div>'
+    )
+    runs = "1 (no spread available)" if bench["repetitions"] == 1 else str(bench["repetitions"])
+    cards.append(
+        f'<div class="card span-6"><span class="label">Conditions</span><dl class="kv">'
+        f'<dt>CPU</dt><dd>{esc(context["cpu"])}</dd>'
+        f'<dt>Compiler</dt><dd>{esc(context["compiler"])}</dd>'
+        f'<dt>Flags</dt><dd class="mono">{esc(context["cxx_flags"])}</dd>'
+        f"<dt>Runs</dt><dd>{runs}</dd></dl>"
+        f'<span class="foot"><a href="#reproduce">Full environment →</a></span></div>'
+    )
+    return f'<section class="wrap" aria-label="Key results"><div class="bento">{"".join(cards)}</div></section>'
+
+
+ORDER_TYPES = [
+    ("LIMIT", "Limit", "Trades what it can at its price or better, then rests the remainder."),
+    ("IOC", "IOC", "Immediate or cancel: trades what it can up to its price, cancels the rest."),
+    ("FOK", "FOK", "Fill or kill: trades its full size at once or does nothing."),
+    ("POST", "Post-only", "Rests only if it wouldn't trade on arrival."),
+    ("MARKET", "Market", "Ignores its price and takes the best prices available."),
+]
+
+
+def replay_html(steps, replay_error):
+    if not steps:
+        body = empty_note(replay_error or NO_REPLAY)
+        lede = ""
+    else:
+        types = "".join(
+            f'<li data-type="{key}"><b>{name}</b><span>{text}</span></li>' for key, name, text in ORDER_TYPES
+        )
+        lede = (
+            f'<p class="lede">Step through {len(steps)} orders. Buyers wait on the left, sellers on the right; '
+            "a trade happens when an order reaches the other side.</p>"
+        )
+        body = f"""<ul class="otypes" aria-label="Order types">{types}</ul>
+    <p class="otypes-note">Cancel removes a resting order. Modify keeps the order's place in the queue if it only shrinks; a price change or a larger size sends it to the back.</p>
+    <div class="demo card" id="demo" role="region" aria-label="Order book replay demo" tabindex="0">
+      <div class="demo-grid">
+        <div class="demo-state">
+          <div id="ladder"><noscript><p class="caveat">The replay needs JavaScript. The benchmark results above don't.</p></noscript></div>
+        </div>
+        <div class="demo-side">
+          <div aria-live="polite" aria-atomic="true" id="demo-live">
+            <p class="eyebrow">Operation</p><p class="op-text" id="op-text"></p>
+            <p class="eyebrow">Result</p><p class="res-text" id="res-text"></p>
+          </div>
+          <p class="eyebrow">Last 5 operations</p><ol class="history" id="history"></ol>
+        </div>
+      </div>
+      <div class="controls" id="replay-controls">
+        <button type="button" class="ctl" id="reset" aria-label="Reset to first step">⟲<span class="t"> Reset</span></button>
+        <button type="button" class="ctl" id="prev" aria-label="Step back">◀<span class="t"> Back</span></button>
+        <button type="button" class="ctl primary" id="play" aria-pressed="false">Play</button>
+        <button type="button" class="ctl" id="next" aria-label="Step forward"><span class="t">Step </span>▶</button>
+        <button type="button" class="ctl" id="next-trade">Next trade</button>
+        <input type="range" id="scrubber" min="0" max="{len(steps) - 1}" value="{replay_start(steps)}" aria-label="Replay step">
+        <span class="count num" id="step-count"></span>
+        <div class="seg" role="radiogroup" aria-label="Speed" id="speed">
+          <button role="radio" aria-checked="false" data-value="1400">0.5×</button><button role="radio" aria-checked="true" data-value="700">1×</button><button role="radio" aria-checked="false" data-value="350">2×</button>
+        </div>
+      </div>
+      <p class="hint">Keys when the demo has focus: Space plays or pauses, ← → step, Home resets.</p>
+    </div>
+    <p class="caveat" role="note"><b>Replayed through MapBook.</b> The order script is synthetic (examples/demo_flow.txt). The differential test checks that FlatBook produces the same fills on generated flows. Dashed rows traded in the current step.</p>"""
+    return f"""<section class="s wrap" aria-labelledby="replay">
+    <p class="eyebrow">How a book matches</p>
+    <h2 id="replay">An order trades when it reaches the best price on the other side</h2>
+    {lede}
+    {body}
+</section>"""
+
+
+MECHANISM = """<section class="s wrap" id="mechanism" aria-labelledby="h-mech">
+    <p class="eyebrow">Where the difference comes from</p>
+    <h2 id="h-mech">FlatBook finds most price levels by index instead of walking a tree</h2>
+    <p class="lede">Most messages touch prices near the best bid and ask. FlatBook keeps those levels in a contiguous array, pools its orders so resting orders don't allocate after warm-up, and caches the best price on each side.</p>
+    <div class="mech">
+      <div class="card">
+        <span class="label"><span class="swatch" style="background:var(--series-2)"></span>&nbsp; MapBook</span>
+        <h3>Red-black tree of levels</h3>
+        <p>Finding a level follows about log₂(n) pointers, and each one can miss the cache. Each level's orders sit in a linked list.</p>
+        <svg viewBox="0 0 300 120" role="img" aria-label="Schematic: a binary tree of price levels, three levels deep.">
+          <g stroke="var(--axis)" stroke-width="1.5" fill="none"><path d="M150 22 L80 62 M150 22 L220 62 M80 62 L45 100 M80 62 L115 100 M220 62 L185 100 M220 62 L255 100"/></g>
+          <g fill="var(--surface-2)" stroke="var(--series-2)" stroke-width="2">
+            <rect x="122" y="8" width="56" height="28" rx="6"/><rect x="52" y="48" width="56" height="28" rx="6"/><rect x="192" y="48" width="56" height="28" rx="6"/>
+            <rect x="17" y="86" width="56" height="28" rx="6"/><rect x="87" y="86" width="56" height="28" rx="6"/><rect x="157" y="86" width="56" height="28" rx="6"/><rect x="227" y="86" width="56" height="28" rx="6"/></g>
+          <g text-anchor="middle"><text x="150" y="27">1004</text><text x="80" y="67">1002</text><text x="220" y="67">1006</text><text x="45" y="105">1001</text><text x="115" y="105">1003</text><text x="185" y="105">1005</text><text x="255" y="105">1007</text></g>
+        </svg>
+      </div>
+      <div class="card">
+        <span class="label"><span class="swatch" style="background:var(--series-1)"></span>&nbsp; FlatBook</span>
+        <h3>Array indexed by price tick</h3>
+        <p>The level for price <span class="mono">p</span> is slot <span class="mono">p − base</span>, and neighbouring levels share cache lines. Prices outside the window fall back to a <span class="mono">std::map</span>.</p>
+        <svg viewBox="0 0 300 120" role="img" aria-label="Schematic: four contiguous array slots for prices 1001 to 1004.">
+          <g fill="var(--surface-2)" stroke="var(--series-1)" stroke-width="2">
+            <rect x="6" y="42" width="68" height="34" rx="4"/><rect x="80" y="42" width="68" height="34" rx="4"/><rect x="154" y="42" width="68" height="34" rx="4"/><rect x="228" y="42" width="68" height="34" rx="4"/></g>
+          <g text-anchor="middle"><text x="40" y="64">1001</text><text x="114" y="64">1002</text><text x="188" y="64">1003</text><text x="262" y="64">1004</text>
+          <text x="151" y="26">slot = price − 1001</text><text x="151" y="104">one contiguous block</text></g>
+        </svg>
+      </div>
+    </div>
+    <p class="caveat" role="note"><b>Design, not a measurement.</b> The benchmark times whole books, so it doesn't show how much each of the three differences contributes.</p>
+</section>"""
+
+
+def latency_html(bench, bench_error):
+    lat = takeaway_latency(bench) if bench else None
+    if not lat:
+        return f"""<section class="s wrap" aria-labelledby="latency">
+    <p class="eyebrow">Per-message latency</p>
+    <h2 id="latency">Per-message latency</h2>
+    {empty_note(bench_error or NO_BENCH)}
+</section>"""
+    tick = bench["clock"].get("tick_ns")
+    measured = sum(s["count"] for s in bench["latency"]["FlatBook"].values())
+    runs = "Single run" if bench["repetitions"] == 1 else f"{bench['repetitions']} runs"
+    sub = f"{esc(bench['context']['cpu'])} · {measured:,} messages per book · {runs.lower()}"
+    caveat = ""
+    zero = any(s["p50"] == 0 for book in bench["latency"].values() for s in book.values())
+    if zero and tick:
+        caveat = (
+            '<p class="caveat" role="note"><b>A value of 0 ns</b> means the message finished before the clock '
+            "advanced, not that it took no time. Anything under one tick reads as 0 or one tick.</p>"
+        )
+    grid_note = "Vertical gridlines fall on clock ticks. " if tick else ""
+    return f"""<section class="s wrap" aria-labelledby="latency">
+    <p class="eyebrow">Per-message latency</p>
+    <h2 id="latency">{esc(lat['headline'])}</h2>
+    <p class="lede">{esc(lat['text'])}</p>
+    <figure class="figure" aria-labelledby="fig-lat-title">
+      <div class="fig-head">
+        <div><h3 id="fig-lat-title">Latency percentiles by operation</h3><p class="sub">{sub}</p></div>
+        <div class="seg" role="radiogroup" aria-label="View" data-view-toggle><button role="radio" aria-checked="true" data-value="chart">Chart</button><button role="radio" aria-checked="false" data-value="table">Table</button></div>
+      </div>
+      <div class="legend glyphs" aria-hidden="true">
+        <span><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="var(--ink-3)"/></svg>p50</span>
+        <span><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="none" stroke="var(--ink-3)" stroke-width="2"/></svg>p99</span>
+        <span><svg width="22" height="10"><line x1="1" y1="5" x2="21" y2="5" stroke="var(--ink-3)" stroke-width="2"/></svg>p50 to p99.9</span>
+      </div>
+      <div id="lat-plot"></div>
+      <div id="lat-table" hidden></div>
+      <figcaption>Each row is one operation type, one lane per book. The line runs from p50 to p99.9, the filled dot marks p50 and the ring marks p99. {grid_note}{runs} of {measured:,} messages per book, so no run-to-run spread. The table adds p90, max and sample counts.</figcaption>
+    </figure>
+    {caveat}
+</section>"""
+
+
+def method_html(bench, facts):
+    if not bench:
+        return ""
+    context = bench["context"]
+    summary = throughput_summary(bench)
+    measured = sum(s["count"] for s in bench["latency"].get("FlatBook", {}).values())
+    warm = facts["warmup"] or 0
+    tick = bench["clock"].get("tick_ns")
+    step = grid_step(bench)
+    para = [
+        f"The benchmark generates one seeded stream of {measured + warm:,.0f} messages (seed {esc(context['seed'])}): "
+        f"{esc(context['message_mix'])}."
+        + (f" {facts['crossing_share'] * 100:.0f}% of adds are priced through the best price, so they trade on arrival."
+           if facts["crossing_share"] else "")
+        + (f" The first {warm:,.0f} messages warm the book and are not measured." if warm else ""),
+        "Throughput is the measured messages divided by the time to process them, with warm-up excluded from "
+        "timing and averaged over Google Benchmark's repeated passes (items per second). Latency is one <span class=\"mono\">steady_clock</span> sample around each message, grouped by "
+        "operation type afterwards: an add that produced fills counts as crossing.",
+    ]
+    load = context.get("load_avg")
+    noise = ""
+    if load and context.get("num_cpus"):
+        noise = (
+            f" The machine's load average was {min(load):.0f}–{max(load):.0f} on {context['num_cpus']} CPUs "
+            "during the run, so other work may have added noise."
+        )
+    runs = "Each book ran once, so there is no run-to-run spread." if bench["repetitions"] == 1 else (
+        f"Each book ran {bench['repetitions']} times.")
+    para.append(runs + noise)
+    defs = []
+    if tick:
+        tick_def = f"lob_bench estimates one tick at {tick:.0f} ns"
+        if step and abs(step - tick) >= 0.5:
+            tick_def += f"; the recorded values are multiples of about {step:.1f} ns"
+        defs.append(("Timer resolution", tick_def + "."))
+    defs += [
+        ("p50, p99, p99.9", "The latency that 50%, 99% or 99.9% of messages beat."),
+        ("Resting / crossing add", "An add that rests in the book, or one that trades on arrival."),
+    ]
+    dl = "".join(f"<dt>{name}</dt><dd>{text}</dd>" for name, text in defs)
+    shows = []
+    if summary:
+        shows.append(f"FlatBook sustains {summary['ratio']:.2f}× MapBook's throughput on this flow, on one thread.")
+    if facts["diff_seeds"]:
+        shows.append("Both books produce the same fills as a naive reference, checked op by op.")
+    lat = takeaway_latency(bench)
+    if lat and not lat["resolved"]:
+        shows.append("Per-message p99 latency is equal within two clock ticks.")
+    doesnt = [
+        "Performance on real market data: the flow is synthetic.",
+        "Run-to-run spread: each book was measured once." if bench["repetitions"] == 1 else
+        "Variation across machines: all runs used one machine.",
+        "Latency differences smaller than two clock ticks.",
+        "Multiple instruments, threads, networking or a market data feed.",
+    ]
+    li = lambda items: "".join(f"<li>{t}</li>" for t in items)
+    return f"""<section class="s wrap" id="method" aria-labelledby="h-method">
+    <p class="eyebrow">Methodology</p>
+    <h2 id="h-method">How this was measured</h2>
+    <div class="prose method">{''.join(f'<p>{p}</p>' for p in para)}<dl class="defs">{dl}</dl></div>
+    <div class="two">
+      <div><h3>What this shows</h3><ul>{li(shows)}</ul></div>
+      <div><h3>What it doesn't show</h3><ul>{li(doesnt)}</ul></div>
+    </div>
+</section>"""
+
+
+def reproduce_html(bench):
+    rows = []
     if bench:
         context = bench["context"]
-        meta = (
-            f"{html.escape(context['cpu'])}, {html.escape(context['compiler'])}, "
-            f"flags <code>{html.escape(context['cxx_flags'])}</code>, commit "
-            f"<code>{html.escape(context['git_sha'][:12])}</code>, run {html.escape(context['date'][:10])}."
+        tick = bench["clock"].get("tick_ns")
+        load = context.get("load_avg")
+        rows = [
+            ("CPU", esc(context["cpu"]) + (f" ({context['num_cpus']} cores)" if context.get("num_cpus") else "")),
+            ("Compiler", esc(context["compiler"])),
+            ("Flags", f'<span class="mono">{esc(context["cxx_flags"])}</span>'),
+            ("Google Benchmark", esc(context.get("library_version") or "unknown")),
+            ("Commit recorded by the run", f'<span class="mono">{esc(context["git_sha"][:7])}</span>'),
+            ("Run date", esc(context["date"][:10])),
+            ("Clock tick", f"{tick:.0f} ns" if tick else "not recorded"),
+            ("Load average", ", ".join(f"{v:.1f}" for v in load) if load else "not recorded"),
+            ("Repetitions", str(bench["repetitions"])),
+            ("Seed", esc(context["seed"])),
+            ("Data file", '<span class="mono">results/bench.json</span>'),
+        ]
+    table = ""
+    if rows:
+        body = "".join(f'<tr><th scope="row">{k}</th><td>{v}</td></tr>' for k, v in rows)
+        table = f"""<details>
+      <summary>Full environment · {len(rows)} rows</summary>
+      <div class="tablewrap" tabindex="0" role="region" aria-label="Environment table">
+        <table><thead><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead><tbody>{body}</tbody></table>
+      </div>
+    </details>"""
+    return f"""<section class="s wrap" id="reproduce" aria-labelledby="h-repro">
+    <p class="eyebrow">Reproduce</p>
+    <h2 id="h-repro">Run it yourself</h2>
+    <div class="codewrap"><pre><code>git clone {REPO_URL}.git
+cd limitorderbook
+cmake --workflow --preset default    # Release build + tests
+./build/lob_bench                    # latency and throughput benchmark
+./build/lob_replay examples/demo_flow.txt
+scripts/run_bench.sh                 # rerun everything and rebuild this page</code></pre></div>
+    <p class="small-note">Needs CMake 3.25+, Ninja and a C++17 compiler. This page is built from the committed <span class="mono">results/bench.json</span>; CI reruns a shorter benchmark on every push but keeps it as a build artifact only.</p>
+    {table}
+</section>"""
+
+
+def build_page(bench, bench_error, steps, replay_error):
+    facts = source_facts()
+    payload = {
+        "ops": [{"key": key, "label": label} for key, label in OPS],
+        "latency": bench["latency"] if bench else None,
+        "gridStep": grid_step(bench) if bench else None,
+        "tick": bench["clock"].get("tick_ns") if bench else None,
+        "replay": steps,
+        "replayStart": replay_start(steps) if steps else 0,
+    }
+    data = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
+    footer = "No benchmark run recorded."
+    description = "A C++17 limit order book benchmarked against a std::map design on a seeded synthetic order flow."
+    if bench:
+        context = bench["context"]
+        footer = (
+            f'Data: <span class="mono">results/bench.json</span> · run at commit '
+            f'<span class="mono">{esc(context["git_sha"][:7])}</span> · {esc(context["date"][:10])}'
         )
-    else:
-        meta = "No benchmark run recorded."
-    return TEMPLATE.replace("{{META}}", meta).replace("{{DATA}}", data)
+        summary = throughput_summary(bench)
+        if summary:
+            description = (
+                f"A C++17 limit order book whose flat-array design processes {summary['flat'] / 1e6:.2f} million "
+                f"messages a second, {summary['ratio']:.2f}× a std::map design on the same seeded flow."
+            )
+    parts = [
+        hero_html(bench, bench_error),
+        bento_html(bench, facts),
+        replay_html(steps, replay_error),
+        MECHANISM if bench else "",
+        latency_html(bench, bench_error),
+        method_html(bench, facts),
+        reproduce_html(bench),
+    ]
+    return (
+        TEMPLATE.replace("{{DESCRIPTION}}", esc(description))
+        .replace("{{MAIN}}", "\n".join(p for p in parts if p))
+        .replace("{{FOOTER}}", footer)
+        .replace("{{DATA}}", data)
+    )
 
 
 TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Limit order book benchmark · Allen Wang</title>
-<script>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
-<style>
-:root {
-  --bg: #fbfbf9; --fg: #111111; --muted: #5f5f63; --grid: #e3e3e0; --panel: #f1f1ee;
-  --a: #2b6cb0; --b: #c05621; --bid: #2b6cb0; --ask: #c05621; --outline: #111111;
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0b0b0b; --fg: #f2f2ef; --muted: #a1a1a6; --grid: #2a2a2a; --panel: #161616;
-    --a: #63a4e8; --b: #f0965a; --bid: #63a4e8; --ask: #f0965a; --outline: #f2f2ef;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #0b0b0b; --fg: #f2f2ef; --muted: #a1a1a6; --grid: #2a2a2a; --panel: #161616;
-  --a: #63a4e8; --b: #f0965a; --bid: #63a4e8; --ask: #f0965a; --outline: #f2f2ef;
-  color-scheme: dark;
-}
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg);
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif; }
-main { max-width: 960px; margin: 0 auto; padding: 0 16px 48px; }
-.site-nav { display: flex; justify-content: space-between; gap: 16px; padding: 16px 0; font-size: 14px; }
-.site-nav a { color: var(--muted); text-decoration: none; }
-.site-nav a:hover { color: var(--fg); }
-h1 { font-size: 1.5rem; margin: 0 0 4px; }
-h2 { font-size: 1.15rem; margin: 32px 0 4px; }
-p { margin: 4px 0; }
-.meta, .note { color: var(--muted); font-size: 0.9rem; }
-.takeaway { font-weight: 600; margin: 8px 0; }
-.empty { padding: 24px; background: var(--panel); border-radius: 8px; color: var(--muted); }
-svg { display: block; width: 100%; height: auto; overflow: visible; }
-svg text { fill: var(--fg); font-size: 12px; }
-svg .muted { fill: var(--muted); }
-.gridline { stroke: var(--grid); }
-.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
-.controls input[type=range] { flex: 1 1 160px; min-width: 0; }
-button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--grid);
-  background: var(--panel); color: var(--fg); cursor: pointer; }
-#step-text { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; min-height: 3em;
-  overflow-wrap: anywhere; }
-.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.85rem; color: var(--muted); }
-.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
-code { font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; }
-</style>
+<meta name="description" content="{{DESCRIPTION}}">
+<link rel="icon" href="data:,">
+<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0b0b" media="(prefers-color-scheme: dark)">
+<script>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="kit/report.css">
+<link rel="stylesheet" href="report.local.css">
+<script src="kit/report.js" defer></script>
+<script src="kit/charts.js" defer></script>
+<script src="report.local.js" defer></script>
 </head>
 <body>
-<main>
-<nav class="site-nav" aria-label="Site"><a href="https://allenwang0.github.io/">← Allen Wang</a><a href="https://github.com/allenwang0/limitorderbook">Source</a></nav>
-<h1>Limit order book benchmark</h1>
-<p class="meta">{{META}}</p>
-<p class="note">Synthetic data: all order flow on this page is seeded, not market data.</p>
-
-<section id="latency">
-<h2 id="latency">Latency per operation</h2>
-<p class="takeaway" id="latency-takeaway"></p>
-<div class="legend" id="latency-legend"></div>
-<div id="latency-chart"></div>
-<p class="note" id="clock-note"></p>
-</section>
-
-<section id="throughput">
-<h2 id="throughput">Throughput</h2>
-<p class="takeaway" id="throughput-takeaway"></p>
-<div id="throughput-chart"></div>
-</section>
-
-<section id="replay">
-<h2 id="replay">Book replay</h2>
-<p class="note">examples/demo_flow.txt through MapBook. Bids on the left, asks on the right, one row per price in ticks. Rows that traded in the current step are outlined.</p>
-<p class="note">Commands: <code>ADD id side price qty [type]</code> with side B (buy) or S (sell), price in ticks; <code>CXL id</code> cancels; <code>MOD id qty price</code> changes an order. Types: default LIMIT rests any remainder, IOC fills what it can up to the price and cancels the rest, FOK fills in full or not at all, POST rests only if it would not cross, MARKET ignores price.</p>
-<div class="controls" id="replay-controls">
-  <button type="button" id="prev" aria-label="Previous step">Prev</button>
-  <input type="range" id="scrubber" min="0" value="0" aria-label="Replay step">
-  <button type="button" id="next" aria-label="Next step">Next</button>
-  <span id="step-count" class="note"></span>
-  <span class="note" aria-hidden="true">← → keys step</span>
-</div>
-<p id="step-text"></p>
-<div id="ladder"></div>
-</section>
+<a class="skip" href="#main">Skip to content</a>
+<header class="bar">
+  <div class="wrap">
+    <a class="back" href="https://allenwang0.github.io/">← Allen Wang</a>
+    <span class="title" aria-hidden="true">Limit order book benchmark</span>
+    <a class="pill" href="https://github.com/allenwang0/limitorderbook">Code ↗</a>
+  </div>
+</header>
+<main id="main">
+{{MAIN}}
 </main>
+<footer>
+  <div class="wrap">
+    <span><a href="https://allenwang0.github.io/">← Allen Wang</a><a href="https://github.com/allenwang0/limitorderbook">Code ↗</a></span>
+    <span>{{FOOTER}}</span>
+  </div>
+</footer>
 <script type="application/json" id="report-data">{{DATA}}</script>
-<script>
-(function () {
-  "use strict";
-  const data = JSON.parse(document.getElementById("report-data").textContent);
-  const NS = "http://www.w3.org/2000/svg";
-  const colors = { MapBook: "var(--a)", FlatBook: "var(--b)" };
-
-  function el(name, attrs, parent, text) {
-    const node = document.createElementNS(NS, name);
-    for (const key in attrs) node.setAttribute(key, attrs[key]);
-    if (text !== undefined) node.textContent = text;
-    if (parent) parent.appendChild(node);
-    return node;
-  }
-  function empty(target, message) {
-    const div = document.createElement("div");
-    div.className = "empty";
-    div.textContent = message;
-    target.replaceChildren(div);
-  }
-  function fmt(value) { return Math.round(value).toLocaleString("en-US"); }
-  function chartWidth(target) { return Math.max(300, Math.floor(target.clientWidth || 640)); }
-
-  function marker(shape, x, y, color, parent) {
-    if (shape === "p50") return el("circle", { cx: x, cy: y, r: 5, fill: color }, parent);
-    if (shape === "p99") return el("rect", { x: x - 5, y: y - 5, width: 10, height: 10, fill: "none", stroke: color, "stroke-width": 2 }, parent);
-    return el("path", { d: `M${x},${y - 6} L${x + 6},${y + 5} L${x - 6},${y + 5} Z`, fill: color }, parent);
-  }
-
-  function drawLatency() {
-    const target = document.getElementById("latency-chart");
-    if (!data.bench) { empty(target, data.benchError); return; }
-    document.getElementById("latency-takeaway").textContent = data.latencyTakeaway;
-    const clock = data.bench.clock;
-    if (clock && clock.tick_ns != null) {
-      document.getElementById("clock-note").textContent =
-        `Clock tick ${fmt(clock.tick_ns)} ns; empty timer p50 ${fmt(clock.overhead_p50_ns)} ns. ` +
-        "Values at or near one tick are at the clock's resolution; 0 ns values (within one tick) are drawn at the axis start.";
-    }
-    const legend = document.getElementById("latency-legend");
-    legend.innerHTML = "";
-    for (const book of data.books) {
-      const span = document.createElement("span");
-      const swatch = document.createElement("span");
-      swatch.className = "swatch";
-      swatch.style.background = colors[book];
-      span.append(swatch, book);
-      legend.appendChild(span);
-    }
-    for (const label of ["circle = p50", "square = p99", "triangle = p99.9"]) {
-      const span = document.createElement("span");
-      span.textContent = label;
-      legend.appendChild(span);
-    }
-
-    const values = [];
-    for (const book of data.books) for (const op of data.ops) {
-      const s = (data.bench.latency[book] || {})[op.key];
-      if (s) values.push(s.p50, s["p99.9"]);
-    }
-    const positive = values.filter((v) => v > 0);
-    const lo = Math.pow(10, Math.floor(Math.log10(Math.max(1, Math.min(...positive)))));
-    const hi = Math.pow(10, Math.ceil(Math.log10(Math.max(...values))));
-    const width = chartWidth(target), left = width < 480 ? 96 : 112, right = 40, top = 8, rowH = 52, bottom = 40;
-    const height = top + rowH * data.ops.length + bottom;
-    const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, width, height, role: "img", "aria-label": "Latency percentiles per operation, log scale" });
-    const x = (v) => left + (Math.log10(Math.max(v, lo)) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo)) * (width - left - right);
-    for (let t = lo; t <= hi; t *= 10) {
-      el("line", { class: "gridline", x1: x(t), x2: x(t), y1: top, y2: height - bottom }, svg);
-      el("text", { x: x(t), y: height - bottom + 16, "text-anchor": "middle", class: "muted" }, svg, fmt(t));
-    }
-    el("text", { x: left + (width - left - right) / 2, y: height - 6, "text-anchor": "middle" }, svg, "Latency (ns, log scale)");
-    data.ops.forEach((op, i) => {
-      const row = el("g", { class: "row", "data-op": op.key }, svg);
-      const y0 = top + i * rowH;
-      el("text", { x: 0, y: y0 + rowH / 2 + 4 }, row, op.label);
-      data.books.forEach((book, j) => {
-        const s = (data.bench.latency[book] || {})[op.key];
-        if (!s) return;
-        const y = y0 + 16 + j * 20;
-        const color = colors[book];
-        el("line", { x1: x(s.p50), x2: x(s["p99.9"]), y1: y, y2: y, stroke: color, "stroke-width": 1.5 }, row);
-        for (const p of ["p50", "p99", "p99.9"]) {
-          const m = marker(p, x(s[p]), y, color, row);
-          const shown = s[p] > 0 ? `${fmt(s[p])} ns` : "0 ns (within one clock tick, drawn at the axis start)";
-          el("title", {}, m, `${book} ${op.label} ${p}: ${shown} (${fmt(s.count)} samples)`);
-        }
-        el("text", { x: Math.min(x(s["p99.9"]) + 10, width - 32), y: y + 4, class: "muted" }, row, book === "MapBook" ? "Map" : "Flat");
-      });
-    });
-    target.replaceChildren(svg);
-  }
-
-  function drawThroughput() {
-    const target = document.getElementById("throughput-chart");
-    if (!data.bench) { empty(target, data.benchError); return; }
-    const rates = data.bench.throughput;
-    const books = data.books.filter((b) => rates[b]);
-    if (!books.length) { empty(target, data.benchError || "No throughput results in bench.json"); return; }
-    document.getElementById("throughput-takeaway").textContent = data.throughputTakeaway;
-    const width = chartWidth(target), left = 80, right = 72, barH = 28, gap = 14, bottom = 36;
-    const height = books.length * (barH + gap) + bottom;
-    const max = Math.max(...books.map((b) => rates[b]));
-    const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, width, height, role: "img", "aria-label": "Throughput in messages per second" });
-    books.forEach((book, i) => {
-      const y = i * (barH + gap);
-      const w = rates[book] / max * (width - left - right);
-      el("text", { x: 0, y: y + barH / 2 + 4 }, svg, book);
-      const bar = el("rect", { x: left, y, width: w, height: barH, fill: colors[book] }, svg);
-      el("title", {}, bar, `${book}: ${fmt(rates[book])} messages/s`);
-      el("text", { x: left + w + 6, y: y + barH / 2 + 4 }, svg, `${(rates[book] / 1e6).toFixed(2)}M/s`);
-    });
-    el("text", { x: left + (width - left - right) / 2, y: height - 8, "text-anchor": "middle" }, svg, "Messages per second, standard mix");
-    target.replaceChildren(svg);
-  }
-
-  function setupReplay() {
-    const target = document.getElementById("ladder");
-    const controls = document.getElementById("replay-controls");
-    if (!data.replay) { controls.hidden = true; empty(target, data.replayError); return; }
-    const steps = data.replay;
-    let maxQty = 1;
-    for (const s of steps) for (const l of s.bids.concat(s.asks)) maxQty = Math.max(maxQty, l[1]);
-    const scrubber = document.getElementById("scrubber");
-    scrubber.max = String(steps.length - 1);
-    let current = 0;
-
-    function describe(step) {
-      const parts = step.events.map((e) => {
-        if (e.type === "fill") return `fill ${e.qty} @ ${e.price} vs #${e.resting_id}`;
-        if (e.type === "rejected") return `rejected (${e.reason})`;
-        return `${e.type} ${e.qty}`;
-      });
-      return `${step.cmd}  ->  ${parts.join(", ")}`;
-    }
-
-    function draw() {
-      const step = steps[current];
-      scrubber.value = String(current);
-      document.getElementById("step-count").textContent = `step ${current + 1} of ${steps.length}`;
-      document.getElementById("step-text").textContent = describe(step);
-      const fillPrices = new Set(step.events.filter((e) => e.type === "fill").map((e) => e.price));
-      const prices = new Set(fillPrices);
-      for (const l of step.bids.concat(step.asks)) prices.add(l[0]);
-      const sorted = Array.from(prices).sort((a, b) => b - a);
-      const bids = new Map(step.bids.map((l) => [l[0], l]));
-      const asks = new Map(step.asks.map((l) => [l[0], l]));
-      const width = chartWidth(target), mid = width / 2, labelW = 56, rowH = 20, top = 24, bottom = 32;
-      const half = mid - labelW / 2 - 8;
-      const height = top + Math.max(sorted.length, 1) * rowH + bottom;
-      const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, width, height, role: "img", "aria-label": "Depth ladder", id: "ladder-svg", "data-step": String(current) });
-      el("text", { x: mid - labelW / 2 - 8, y: 14, "text-anchor": "end" }, svg, "Bids (qty)");
-      el("text", { x: mid + labelW / 2 + 8, y: 14 }, svg, "Asks (qty)");
-      el("text", { x: mid, y: 14, "text-anchor": "middle", class: "muted" }, svg, "price");
-      if (!sorted.length) el("text", { x: 0, y: top + 14, class: "muted" }, svg, "Book is empty");
-      sorted.forEach((price, i) => {
-        const y = top + i * rowH;
-        const g = el("g", { class: "level", "data-price": String(price) }, svg);
-        el("text", { x: mid, y: y + 14, "text-anchor": "middle" }, g, String(price));
-        const bid = bids.get(price), ask = asks.get(price);
-        if (bid) {
-          const w = bid[1] / maxQty * half;
-          el("rect", { x: mid - labelW / 2 - 4 - w, y: y + 2, width: w, height: rowH - 4, fill: "var(--bid)" }, g);
-          el("text", { x: mid - labelW / 2 - 8 - w, y: y + 14, "text-anchor": "end", class: "muted" }, g, `${bid[1]} (${bid[2]})`);
-        }
-        if (ask) {
-          const w = ask[1] / maxQty * half;
-          el("rect", { x: mid + labelW / 2 + 4, y: y + 2, width: w, height: rowH - 4, fill: "var(--ask)" }, g);
-          el("text", { x: mid + labelW / 2 + 8 + w, y: y + 14, class: "muted" }, g, `${ask[1]} (${ask[2]})`);
-        }
-        if (fillPrices.has(price)) {
-          el("rect", { x: 2, y: y + 1, width: width - 4, height: rowH - 2, fill: "none", stroke: "var(--outline)", "stroke-width": 1.5, "stroke-dasharray": "4 3", class: "traded" }, g);
-        }
-      });
-      el("text", { x: 0, y: height - 8, class: "muted" }, svg, "quantity (order count) per price level, price in ticks");
-      target.replaceChildren(svg);
-    }
-
-    function go(delta) { current = Math.min(steps.length - 1, Math.max(0, current + delta)); draw(); }
-    document.getElementById("prev").addEventListener("click", () => go(-1));
-    document.getElementById("next").addEventListener("click", () => go(1));
-    scrubber.addEventListener("input", () => { current = Number(scrubber.value); draw(); });
-    document.addEventListener("keydown", (event) => {
-      if (event.target === scrubber) return;
-      if (event.key === "ArrowRight") { go(1); event.preventDefault(); }
-      if (event.key === "ArrowLeft") { go(-1); event.preventDefault(); }
-    });
-    draw();
-    return draw;
-  }
-
-  drawLatency();
-  drawThroughput();
-  const redrawReplay = setupReplay();
-  window.addEventListener("resize", () => {
-    drawLatency();
-    drawThroughput();
-    if (redrawReplay) redrawReplay();
-  });
-})();
-</script>
 </body>
 </html>
 """
