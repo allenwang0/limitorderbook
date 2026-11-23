@@ -461,12 +461,12 @@ def storage_svg(uid, width, facts):
         p.append(T(ox + pw / 2, oy + 110, "index = price − base", "c-tick", "middle"))
         p.append(T(ox, oy + 138, "vector<Node> pool, uint32 prev/next", "c-tick"))
         for i in range(cells):
-            cls = "c-node-sunk" if i in (2, 9, 10) else "c-node"
+            cls = "c-free" if i in (2, 9, 10) else "c-node"
             p.append(f'<rect class="{cls}" x="{f(ox + i * cw + 1)}" y="{oy + 146}" width="{f(cw - 2)}" height="24" rx="3"/>')
         a, b, c = (ox + 1.5 * cw, ox + 4.5 * cw, ox + 7.5 * cw)
         p.append(f'<path class="c-line-accent" d="M{f(a)} {oy + 170}Q{f((a + b) / 2)} {oy + 186} {f(b)} {oy + 170}'
                  f'M{f(b)} {oy + 170}Q{f((b + c) / 2)} {oy + 186} {f(c)} {oy + 170}"/>')
-        p.append(T(ox + pw, oy + 200, "grey slots: free list", "c-tick", "end"))
+        p.append(T(ox + pw, oy + 200, "dashed slots: free list", "c-tick", "end"))
         half = (pw - 8) / 2
         for i, (l1, l2) in enumerate((("std::map fallback", "prices outside window"),
                                       ("IdIndex", "open addressing, Fibonacci hash"))):

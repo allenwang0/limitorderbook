@@ -186,6 +186,7 @@ details.data summary::marker { color: var(--text-3); }
 .c-hi { fill: var(--accent); font-weight: 600; }
 .c-node { fill: var(--surface); stroke: var(--text-3); stroke-width: 1; }
 .c-node-sunk { fill: var(--surface-sunk); stroke: none; }
+.c-free { fill: none; stroke: var(--text-3); stroke-width: 1; stroke-dasharray: 3 2; }
 .c-line { stroke: var(--text-3); stroke-width: 1; fill: none; }
 .c-line-accent { stroke: var(--accent); stroke-width: 1.5; fill: none; }
 
@@ -243,8 +244,9 @@ table.bench td.wrap-ok { white-space: normal; min-width: 220px; }
   *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
 }
 @media print {
-  :root { --canvas: #fff; --surface: #fff; --surface-sunk: #F2F2F5; --text: #19191B; --text-2: #515154; --text-3: #6E6E73;
-    --accent: #0066CC; --data-muted: #A1A1A6; --border: rgba(0, 0, 0, .15); --grid: rgba(0, 0, 0, .1); color-scheme: light; }
+  :root:not(#print) { --canvas: #fff; --surface: #fff; --surface-sunk: #F2F2F5; --text: #19191B; --text-2: #515154; --text-3: #6E6E73;
+    --accent: #0066CC; --data-muted: #A1A1A6; --border: rgba(0, 0, 0, .15); --grid: rgba(0, 0, 0, .1);
+    --caution: #8A5A00; color-scheme: light; }
   .report-nav, .skip, .actions, .anchor { display: none !important; }
   .section { padding-top: var(--space-7); }
   .figure, .card, .note, pre, table { break-inside: avoid; }
