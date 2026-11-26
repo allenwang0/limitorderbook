@@ -87,12 +87,27 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ninja-build
       - run: pip install -r requirements-dev.txt
       - run: playwright install --with-deps chromium
-      - name: Benchmark (short mode), replay, report, card and README table
-        run: scripts/run_bench.sh --benchmark_min_time=0.1s
+      # The published page shows the committed run in results/bench.json.
+      # A runner benchmark differs by machine and push, so it is a check and
+      # an artifact only, never the page's data.
+      - name: Build the report from the committed results
+        run: python3 -I scripts/build_report.py --readme README.md
+      - name: Committed page and README table match the committed results
+        run: git diff --exit-code docs/index.html README.md
+      - name: Build lob_bench and lob_replay
+        run: |
+          cmake --preset default
+          cmake --build --preset default --target lob_bench lob_replay
+      - name: Committed replay matches lob_replay on the demo flow
+        run: ./build/lob_replay examples/demo_flow.txt | diff - results/replay.jsonl
+      - name: Benchmark on the runner (short mode, artifact only)
+        run: |
+          mkdir -p ci-results
+          ./build/lob_bench --benchmark_min_time=0.1s --benchmark_out=ci-results/bench.json --benchmark_out_format=json
       - uses: actions/upload-artifact@v4
         with:
-          name: bench-json
-          path: results/bench.json
+          name: ci-bench-json
+          path: ci-results/bench.json
       - name: Card matches the site schema
         run: check-jsonschema --schemafile tests/fixtures/card.schema.json site/card.json
       - name: Report and card unit tests

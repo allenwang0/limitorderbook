@@ -13,6 +13,9 @@ import unittest
 
 import jsonschema
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
+import build_report  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "tests" / "fixtures"
 
@@ -58,7 +61,7 @@ class BuildReportTest(unittest.TestCase):
         _, out = self.run_script("--bench", "missing.json", "--replay", "missing.jsonl")
         page = out.read_text()
         for anchor in ("latency", "throughput", "replay"):
-            self.assertIn(f'<h2 id="{anchor}">', page)
+            self.assertIn(f'id="{anchor}"', page)
 
     def test_missing_inputs_show_empty_state(self):
         _, out = self.run_script("--bench", "missing.json", "--replay", "missing.jsonl")
@@ -71,6 +74,42 @@ class BuildReportTest(unittest.TestCase):
         bad.write_text("\n".join([good[0], "{not json", good[1]]) + "\n")
         _, out = self.run_script("--bench", str(FIXTURES / "bench_fixture.json"), "--replay", str(bad))
         self.assertIn("line 2 is not valid JSON", out.read_text())
+
+
+class LatencyTakeawayTest(unittest.TestCase):
+    """The latency headline must not present a sub-resolution gap as a speedup:
+    the timer advances in ticks, so a gap under two ticks can be one sample
+    landing on the other side of a tick boundary."""
+
+    def bench(self, tick):
+        bench, error = build_report.load_bench(str(FIXTURES / "bench_fixture.json"))
+        self.assertIsNone(error)
+        bench["clock"]["tick_ns"] = tick
+        return bench
+
+    def test_gap_under_two_ticks_reads_as_resolution_limited(self):
+        # Fixture p99 gaps are 50 ns; with a 41 ns tick that is 1.2 ticks.
+        lat = build_report.takeaway_latency(self.bench(41.0))
+        self.assertFalse(lat["resolved"])
+        self.assertIn("timer's resolution", lat["headline"])
+        self.assertIn("within the timer's resolution", lat["text"])
+        self.assertIn("one tick lower", lat["text"])
+
+    def test_gap_of_two_ticks_or_more_is_reported_as_a_difference(self):
+        # With a 10 ns tick the same 50 ns gaps are 5 ticks: a real difference.
+        lat = build_report.takeaway_latency(self.bench(10.0))
+        self.assertTrue(lat["resolved"])
+        self.assertNotIn("resolution", lat["headline"] + lat["text"])
+        self.assertIn("lower on 4 of 4", lat["headline"])
+        self.assertIn("resting adds 200 vs 250 ns", lat["text"])
+
+    def test_page_headline_numbers_come_from_the_bench_file(self):
+        bench, _ = build_report.load_bench(str(FIXTURES / "bench_fixture.json"))
+        page = build_report.build_page(bench, None, None, "no replay")
+        # Fixture: FlatBook 20M msgs/s, MapBook 10M msgs/s.
+        self.assertIn("matches 20 million messages a second", page)
+        self.assertIn("2.00×", page)
+        self.assertIn("20.00 M msgs/s", page)
 
 
 if __name__ == "__main__":

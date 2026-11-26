@@ -1,6 +1,6 @@
 # limitorderbook
 
-A limit order book matching engine in C++17: the core of an exchange, pairing buy and sell orders by price and arrival time. Its cache-friendly book processes **58.95M messages/s**, about 1.9x the `std::map` version.
+A limit order book matching engine in C++17: the core of an exchange, pairing buy and sell orders by price and arrival time. Its cache-friendly book processes **58.95M messages/s**, 1.89× the `std::map` version on the same seeded flow.
 
 ![Latency percentiles per operation for both books](docs/img/latency.png)
 
@@ -16,7 +16,7 @@ A limit order book matching engine in C++17: the core of an exchange, pairing bu
 | MapBook | 31.15M |
 | FlatBook | 58.95M |
 
-Single thread on Apple M5 Pro, seeded synthetic flow (55% add, 40% cancel, 5% market). Per-operation latency percentiles are in the [report](docs/index.html).
+One thread on Apple M5 Pro, single run, seeded synthetic flow (55% add, 40% cancel, 5% market). Latency percentiles and a replay are in the [report](https://allenwang0.github.io/limitorderbook/).
 <!-- results:end -->
 
 ## Run it

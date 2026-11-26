@@ -1,0 +1,100 @@
+/* limitorderbook report: styles that report-kit doesn't cover (order types,
+   replay demo, depth ladder). Loaded after kit/report.css; uses kit tokens. */
+
+/* Bid/ask domain pair (spec §9). Kept apart from --series-1/2, which mean
+   FlatBook/MapBook on this page. */
+:root { --bid: #1baf7a; --ask: #e34948; --bid-ink: #0b7a52; --ask-ink: #c0302f; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bid: #199e70; --ask: #e66767; --bid-ink: #3fcf98; --ask-ink: #ff8a8a; }
+}
+:root[data-theme="dark"] { --bid: #199e70; --ask: #e66767; --bid-ink: #3fcf98; --ask-ink: #ff8a8a; }
+
+/* Bento: at tablet width the 4-wide correctness card takes the full row so
+   the two 6-wide cards pair up instead of leaving one orphaned. */
+@media (min-width: 600px) and (max-width: 1023px) { .bento .t-full { grid-column: span 6; } }
+.card .cmp a, .card .foot a { overflow-wrap: anywhere; }
+
+/* Mechanism schematics: text stays >= 11 px at 320 px wide. */
+.mech svg { max-width: 360px; }
+.mech svg text { font-size: 14px; }
+
+/* Order types, shown before the demo */
+.otypes { list-style: none; padding: 0; margin: 32px 0 0; display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.otypes li { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: var(--radius-inner);
+  padding: 12px 14px; font-size: 14px; line-height: 20px; color: var(--ink-2);
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
+.otypes li b { display: block; color: var(--ink-1); font-size: 15px; margin-bottom: 2px; }
+.otypes li.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.otypes-note { margin-top: 12px; font-size: var(--fs-small); color: var(--ink-2); max-width: var(--measure); }
+
+/* Demo shell */
+.demo { margin-top: 24px; padding: var(--card-pad-xl); min-height: 0; }
+.demo:focus-visible { outline-offset: 4px; border-radius: var(--radius-card); }
+.demo-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 32px; }
+@media (max-width: 899px) { .demo-grid { grid-template-columns: 1fr; gap: 20px; } }
+.demo-side .eyebrow { margin-top: 16px; }
+.demo-side .eyebrow:first-child { margin-top: 0; }
+.op-text { font-size: 17px; font-weight: 600; margin-top: 4px; min-height: 26px; }
+.op-text .raw { display: block; font: 13px/1.4 var(--font-mono); color: var(--ink-3); font-weight: 400; margin-top: 2px; }
+.res-text { font-size: 15px; line-height: 22px; color: var(--ink-1); margin-top: 4px; min-height: 44px; }
+.history { margin: 6px 0 0; padding: 0; list-style: none; font-size: 14px; line-height: 20px; color: var(--ink-2); }
+.history li { padding: 4px 0; border-top: 1px solid var(--hairline); display: flex; gap: 8px; }
+.history li:first-child { border-top: 0; color: var(--ink-1); }
+.history .n { color: var(--ink-3); min-width: 3ch; font-variant-numeric: tabular-nums; }
+
+/* Depth ladder: one row per price tick between the lowest and highest level */
+.ladder { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 13px; }
+.ladder th, .ladder td { position: static; background: none; border: 0; padding: 0; white-space: nowrap; }
+.ladder thead th, .ladder thead th:first-child { background: none; font-size: 12px; font-weight: 600; color: var(--ink-3); padding: 0 6px 8px; text-align: center; white-space: normal; }
+.ladder thead th.bid-h { text-align: right; color: var(--bid-ink); }
+.ladder thead th.ask-h { text-align: left; color: var(--ask-ink); }
+.ladder col.px { width: 64px; }
+.ladder tbody tr { height: 24px; }
+.ladder tbody th { font-weight: 500; text-align: center; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.ladder tr.empty th { color: var(--ink-3); font-weight: 400; }
+.ladder tr.best th { color: var(--ink-1); font-weight: 700; }
+.ladder td > div { display: flex; align-items: center; gap: 6px; height: 18px; }
+.ladder td.bid > div { flex-direction: row-reverse; padding-right: 4px; }
+.ladder td.ask > div { padding-left: 4px; }
+.ladder .bar { height: 16px; border-radius: 3px; flex: none; min-width: 2px; }
+.ladder td.bid .bar { background: var(--bid); border-radius: 3px 0 0 3px; }
+.ladder td.ask .bar { background: var(--ask); border-radius: 0 3px 3px 0; }
+.ladder .q { font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 12px; }
+.ladder tr.gap { background: var(--surface-2); }
+.ladder tr.spread td { text-align: center; font-size: 12px; font-weight: 600; color: var(--ink-2); background: var(--surface-2); height: 24px; }
+.ladder tr.traded th, .ladder tr.traded td { border-top: 1.5px dashed var(--ink-1); border-bottom: 1.5px dashed var(--ink-1); }
+.ladder tr.chg th, .ladder tr.chg td { animation: lob-flash 600ms var(--ease-out); }
+.ladder tr.chg th { box-shadow: inset 0 0 0 1px var(--accent); border-radius: 4px; }
+@keyframes lob-flash { from { background: color-mix(in srgb, var(--accent) 22%, transparent); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .ladder tr.chg th, .ladder tr.chg td { animation: none; } }
+.ladder-empty { color: var(--ink-2); font-size: 15px; padding: 24px 0; }
+
+/* Playback controls */
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 24px;
+  padding-top: 16px; border-top: 1px solid var(--hairline); }
+.ctl { min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: var(--radius-control); border: 1px solid var(--hairline);
+  background: var(--surface-1); color: var(--ink-1); font: 600 14px/1 var(--font-sans); cursor: pointer; }
+.ctl:hover:not(:disabled) { box-shadow: var(--shadow-hover); }
+.ctl:disabled { opacity: .4; cursor: default; }
+.ctl.primary { background: var(--accent); border-color: var(--accent); color: var(--surface-1); min-width: 84px; }
+#scrubber { flex: 1 1 200px; min-width: 0; height: 44px; accent-color: var(--accent); margin: 0; }
+.count { font-size: 14px; color: var(--ink-2); min-width: 11ch; }
+.hint { margin-top: 12px; font-size: 13px; color: var(--ink-3); }
+@media (hover: none) { .hint { display: none; } }
+@media (max-width: 599px) {
+  .ctl .t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  #scrubber { flex-basis: 100%; order: 10; }
+  .controls { gap: 8px 6px; }
+  .ctl.primary { min-width: 64px; }
+}
+
+/* Latency figure, methodology, reproduce */
+.legend.glyphs { margin-top: 16px; }
+.figure figcaption { margin-top: 16px; }
+.method dl.defs { display: grid; grid-template-columns: max-content 1fr; gap: 8px 20px; margin-top: 24px; font-size: 15px; }
+.method dl.defs dt { font-weight: 600; color: var(--ink-1); }
+.method dl.defs dd { color: var(--ink-2); }
+@media (max-width: 599px) { .method dl.defs { grid-template-columns: 1fr; gap: 2px; } .method dl.defs dd { margin-bottom: 10px; } }
+.method { margin-top: 24px; }
+.small-note { margin-top: 12px; font-size: 14px; color: var(--ink-3); max-width: var(--measure); }
